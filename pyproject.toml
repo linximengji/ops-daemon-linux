@@ -1,0 +1,15 @@
+[project]
+name = "ops-daemon"
+version = "0.1.0"
+description = "System ops daemon — health check, auto-repair, alerting"
+requires-python = ">=3.11"
+dependencies = [
+    "agent-core",
+    "mcp", "psutil", "httpx", "pyyaml",
+    "opentelemetry-api", "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-grpc",
+    "opentelemetry-instrumentation-httpx"
+]
+
+[tool.setuptools.packages.find]
+include = ["ops_daemon*"]

@@ -1,0 +1,30 @@
+services:
+  pact-broker:
+    image: pactfoundation/pact-broker:latest
+    restart: unless-stopped
+    ports:
+      - "9292:9292"
+    environment:
+      PACT_BROKER_DATABASE_ADAPTER: sqlite
+      PACT_BROKER_DATABASE_NAME: /data/pact_broker.sqlite
+      PACT_BROKER_BASE_URL: http://localhost:9292
+    volumes:
+      - ./pact-data:/data
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    restart: unless-stopped
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+      SPAN_STORAGE_TYPE: badger
+      BADGER_EPHEMERAL: "false"
+      BADGER_DIRECTORY_VALUE: /badger/data
+      BADGER_DIRECTORY_KEY: /badger/key
+      SPAN_STORAGE_TTL: "168h"
+      QUERY_MAX_CLOCK_SKEW_ADJUST: 1s
+    volumes:
+      - ./jaeger-data:/badger

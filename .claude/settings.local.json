@@ -1,0 +1,11 @@
+{
+  "enabledMcpjsonServers": [
+    "p1s-printer",
+    "feishu-notify",
+    "pdf-gen",
+    "blender",
+    "image-gen",
+    "drawio-mcp",
+    "openscad-mcp"
+  ]
+}

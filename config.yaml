@@ -1,0 +1,140 @@
+checks:
+  claudetalk:
+    enabled: true
+    host: 127.0.0.1
+    port: 9877
+    timeout_seconds: 5
+  cloudflared:
+    enabled: true
+    idle_timeout: 600
+  defense_layers:
+    enabled: true
+  docker_compose:
+    enabled: true
+  feishu_bridge:
+    enabled: true
+    host: 127.0.0.1
+    port: 9878
+    timeout_seconds: 5
+  github_ci:
+    enabled: true
+    min_interval_seconds: 900
+    state_dir: ./data/working
+  log_scanner:
+    enabled: true
+    max_lines: 5000
+    paths:
+      claudetalk: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk.log
+      cloudflared: /home/ubuntu/projects/ops-daemon/data/cloudflared.log
+      proxy: /home/ubuntu/projects/proxy/proxy.log
+  logs:
+    enabled: true
+    max_age_hours: 48
+    paths:
+    - /home/ubuntu/projects/proxy/proxy.log
+  mcp_server:
+    enabled: true
+    host: 127.0.0.1
+    port: 9877
+    timeout_seconds: 5
+  pact_broker:
+    enabled: true
+    host: 127.0.0.1
+    port: 9292
+    timeout_seconds: 5
+  pact_verify:
+    enabled: true
+    min_interval_seconds: 900
+    timeout_seconds: 30
+  proxy:
+    enabled: true
+    host: 127.0.0.1
+    port: 4000
+    ports:
+    - 4000
+    - 4002
+    timeout_seconds: 3
+  report_check:
+    enabled: true
+    check_after_hour: 9
+    working_dir: /home/ubuntu/projects/ops-daemon/data/working
+  services:
+    enabled: true
+    mcp_process_names:
+    - p1s-mcp
+    - blender-mcp
+    - image-gen-mcp
+    - pdf-mcp
+    - drawio-mcp
+    - openscad-mcp
+    - cloudflared
+  ssl:
+    critical_days: 7
+    enabled: true
+    targets:
+    - host: 127.0.0.1
+      name: model-proxy
+      port: 4000
+    - host: api.deepseek.com
+      name: deepseek-api
+      port: 443
+    timeout_seconds: 5
+    warn_days: 30
+  stats:
+    enabled: true
+    proxy_url: http://127.0.0.1:4000
+    token_usage_path: /home/ubuntu/projects/claudetalk/.claudetalk/token_usage.jsonl
+  system:
+    cpu_warn_pct: 80
+    disk_critical_pct: 90
+    disk_warn_pct: 85
+    enabled: true
+    memory_warn_pct: 85
+  zombies:
+    enabled: true
+    max_age_minutes: 120
+    mcp_cmdline_patterns:
+    - p1s-mcp
+    - blender-mcp
+    - image-gen-mcp
+    - pdf-mcp
+    - drawio-mcp
+    - openscad-mcp
+daemon:
+  check_interval: 60
+  data_dir: ./data
+  name: ops-daemon
+  stop_marker: /home/ubuntu/projects/ops-daemon/.stop
+llm:
+  diagnosis: true
+  enabled: true
+notify:
+  enabled: true
+  feishu: true
+  terminal: true
+proxy_switch:
+  enabled: true
+repair:
+  check_after_seconds: 30
+  cooldown_seconds: 120
+  enabled: true
+  exhaust_timeout_seconds: 3600
+  max_attempts: 2
+tasks:
+  baseline:
+    enabled: false
+    schedule: 0 * * * *
+  daily_report:
+    email_to: linximengji@163.com
+    enabled: true
+    schedule: 30 8 * * *
+    sections:
+      memory_deep:
+        dow: '5'
+      tool_audit:
+        dow: '1'
+  semi_report:
+    enabled: true
+    schedule: 2 8 * * *
+alerts:
+  cooldown_seconds: 1800

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+*.egg-info/
+
+# Data
+data/
+jaeger-data/
+pact-data/
+
+# Dev / temp
+.plan.md
+_test_*
+*.log
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Systemd generated
+scripts/ops-daemon.service
+scripts/ops-daemon-check.service
+scripts/ops-daemon-check.timer
