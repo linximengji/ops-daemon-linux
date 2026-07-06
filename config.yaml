@@ -47,7 +47,7 @@ checks:
     min_interval_seconds: 900
     timeout_seconds: 30
   proxy:
-    enabled: false
+    enabled: true
     host: 127.0.0.1
     port: 4000
     ports:
