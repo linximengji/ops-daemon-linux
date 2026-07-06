@@ -43,7 +43,27 @@ kill -9 $(cat data/daemon.pid)
 
 **ops-daemon** — a Linux monitoring-only daemon that periodically checks system health and writes state to JSON files. Built on `agent-core` (local package at `/home/ubuntu/projects/agent-core`, installed via `pip install -e`).
 
-**核心原则：只监视，不维护。** Daemon 不做 PID 锁、不做进程管理、不做自动修复。所有子进程 (claudetalk, feishu-bridge, proxy) 由 systemd 管理生命周期。
+**核心原则：只监视，不维护。** Daemon 不做 PID 锁、不做进程管理、不做自动修复、不做 restart_watcher。所有子进程 (claudetalk, feishu-bridge, proxy) 由 systemd 或 spawn 脚本管理生命周期。
+
+### 飞书远程控制
+
+feishu-bridge（9878 端口）独立进程处理飞书消息的快捷指令。支持以下手机端操作：
+
+| 飞书消息 | 功能 |
+|---------|------|
+| `/restart`、`重启` | 写 `.restart-claudetalk` marker，由外部 supervisor 消费 |
+| `/daemon restart`、`重启daemon` | 写 `.restart-daemon` marker，由外部 supervisor 消费 |
+| `打开/开启 jaeger/追踪/trace` | docker compose start jaeger |
+| `打开/开启 pact/合约` | docker compose start pact-broker |
+| `打开/开启 面板/dashboard` | 启动 ops-dashboard (8765) |
+| `关闭 jaeger/追踪/pact/合约/面板/dashboard` | 对应 docker compose stop |
+| `开启远程` / `打开远程` | 重启 cloudflared tunnel + dashboard，30s 健康检查 |
+| `关闭远程` | 停 cloudflared tunnel + dashboard |
+
+**误判防护：** 只有同时包含动作词（打开/开启/关闭）和目标词（远程/jaeger/追踪/trace/pact/合约/面板/dashboard）时才触发系统指令，不会误吞普通对话。
+
+> tunnel 管理依赖 `~/projects/connections.yaml` 和 `tunnel_manager` 模块。
+> 服务启停通过 `docker compose -p ops-daemon start/stop <svc>` 实现。
 
 ### Core loop (`main.py`)
 
