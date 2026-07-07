@@ -1,0 +1,18 @@
+[Unit]
+Description=ClaudeTalk default — Feishu chat agent via SSE
+After=network.target
+Wants=network.target
+After=claudetalk-mcp.service
+Wants=claudetalk-mcp.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects
+ExecStart=/usr/bin/node /home/ubuntu/projects/claudetalk/dist/cli.js --profile default
+Restart=on-failure
+RestartSec=5
+Environment=TZ=Asia/Shanghai
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,17 @@
+[Unit]
+Description=Feishu Bridge — event receiver and card handler, port 9878
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects
+ExecStart=/usr/bin/node /home/ubuntu/projects/claudetalk/dist/feishu-bridge.js
+Restart=on-failure
+RestartSec=5
+Environment=TZ=Asia/Shanghai
+Environment=FEISHU_BRIDGE_WORK_DIR=/home/ubuntu/projects
+
+[Install]
+WantedBy=multi-user.target

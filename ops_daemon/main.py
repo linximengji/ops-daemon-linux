@@ -2,6 +2,12 @@
 import asyncio, json, subprocess, sys, os, time, yaml, traceback
 from pathlib import Path
 
+try:
+    import systemd.daemon as sd  # systemd watchdog support (python3-systemd)
+    _HAS_SD = True
+except ImportError:
+    _HAS_SD = False
+
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -118,9 +124,30 @@ async def main():
 
     lcfg = cfg.get("llm", {})
 
+    # Service status history for up→stopped detection (persisted via working)
+    _prev_checks: dict = {}
+
     @daemon.on_check_complete
     async def on_checks(checks: dict):
-        # LLM diagnosis for system/cert/log anomalies — purely passive, no repair
+        nonlocal _prev_checks
+        # systemd watchdog notification — tells systemd the daemon is alive
+        if _HAS_SD:
+            sd.notify("WATCHDOG=1")
+        # Detect service status transitions: up → stopped
+        _MONITORED_SERVICES = ('feishu_bridge', 'claudetalk', 'mcp_server', 'cloudflared', 'proxy')
+        for name in _MONITORED_SERVICES:
+            cur = checks.get(name, {})
+            prev = _prev_checks.get(name, {})
+            if isinstance(cur, dict) and isinstance(prev, dict):
+                cur_status = cur.get('status')
+                prev_status = prev.get('status')
+                if prev_status == 'up' and cur_status == 'stopped':
+                    await notify('WARN', f'{name} 已停止',
+                                 f'服务 {name} 从运行状态变为停止。\n'
+                                 f'PID: {prev.get("pid", "?")} → 已退出\n'
+                                 f'请及时检查 systemd 状态')
+        _prev_checks = dict(checks)
+        # LLM diagnosis — purely passive, no repair
         if lcfg.get("enabled", False) and lcfg.get("diagnosis", False):
             criticals = [(k, v) for k, v in checks.items()
                          if isinstance(v, dict) and v.get("status") in ("critical",)]
@@ -148,7 +175,7 @@ async def main():
         _report_count += 1
         print(f"[scheduler] run_daily_report called #{_report_count}")
         email_to = tcfg.get("daily_report", {}).get("email_to", "")
-        cmd = ["python", "runner.py",
+        cmd = ["python3", "runner.py",
                "--data-dir", str(root / "data"),
                "--send-email"]
         if email_to:
@@ -194,6 +221,9 @@ async def main():
 
     scheduler.start()
     store.append_episodic({"type": "daemon_start", "message": f"{dc['name']} started"})
+    # sd_notify READY=1 tells systemd the daemon has initialized fully
+    if _HAS_SD:
+        sd.notify("READY=1")
     await notify("INFO", f"{dc['name']} started", f"PID {os.getpid()}")
 
     # crash-recovery: if last exit was a crash, notify after 3 minutes of stability

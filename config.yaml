@@ -114,12 +114,6 @@ notify:
   terminal: true
 proxy_switch:
   enabled: true
-repair:
-  check_after_seconds: 30
-  cooldown_seconds: 120
-  enabled: true
-  exhaust_timeout_seconds: 3600
-  max_attempts: 2
 tasks:
   baseline:
     enabled: false

@@ -1,0 +1,12 @@
+{
+  "type": "process.exit",
+  "ts": "2026-07-07T04:44:10.716Z",
+  "pid": 28266,
+  "uptime_s": 1,
+  "startup_phases": [
+    "initLogFile",
+    "loadConfig"
+  ],
+  "code": 1,
+  "stack": "    at file:///home/ubuntu/projects/claudetalk/dist/cli.js:779:13"
+}

@@ -1,0 +1,16 @@
+[Unit]
+Description=Ops Dashboard — portal for term.linximengji.com, port 8765
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/projects/ops-dashboard
+ExecStart=/usr/bin/node /home/ubuntu/projects/ops-dashboard/dist/server.js
+Restart=on-failure
+RestartSec=5
+Environment=TZ=Asia/Shanghai
+
+[Install]
+WantedBy=multi-user.target
