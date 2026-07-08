@@ -17,6 +17,9 @@ async def check_system(cfg: dict, store, baseline) -> dict:
     result["disk"] = {}
     for part in psutil.disk_partitions():
         try:
+            # Skip snap loop mounts — always 100% full, not actionable
+            if part.mountpoint.startswith("/snap/"):
+                continue
             usage = psutil.disk_usage(part.mountpoint)
             pct = usage.percent
             result["disk"][part.mountpoint] = {
