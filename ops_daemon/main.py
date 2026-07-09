@@ -52,6 +52,21 @@ async def main():
     dc = cfg["daemon"]
     cc = cfg["checks"]
     data_dir = root / dc["data_dir"]
+
+    # OpenTelemetry init — agent-core checks will export spans to Jaeger
+    try:
+        from opentelemetry import trace
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+        from opentelemetry.sdk.resources import Resource
+        _provider = TracerProvider(resource=Resource.create({"service.name": "ops-daemon"}))
+        _provider.add_span_processor(BatchSpanProcessor(
+            OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)))
+        trace.set_tracer_provider(_provider)
+    except Exception:
+        pass  # OTel is optional — daemon runs fine without it
+
     store = StateStore(str(data_dir))
 
     # Rotate stdout/stderr on each start so they don't grow unbounded
