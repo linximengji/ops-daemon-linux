@@ -1,6 +1,10 @@
 """Standalone MCP server for CC to query ops-daemon state and manage tasks.
 Run alongside ops-daemon: reads/writes shared data/ directory."""
-import sys, json, time, re
+# ruff: noqa: E402 — agent-core import after sys.stdout.reconfigure
+import sys
+import json
+import time
+import re
 from pathlib import Path
 from datetime import datetime
 

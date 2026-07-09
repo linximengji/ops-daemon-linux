@@ -1,5 +1,6 @@
 """LLM integration — anomaly diagnosis via DeepSeek API (bypass proxy)."""
-import os, json, time
+import os
+import json
 import httpx
 
 API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")

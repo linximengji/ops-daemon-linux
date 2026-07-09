@@ -1,6 +1,6 @@
 """claudetalk / feishu-bridge / MCP server health checks.
 Uses process name matching so it works without systemd."""
-import subprocess, time
+import time
 import psutil
 
 CLAUDETALK_PROC_NAME = "claudetalk-default"

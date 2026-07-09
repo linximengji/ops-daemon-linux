@@ -4,7 +4,13 @@
       支持 process 和 docker 两种服务类型。
       支持按服务名单独启停。
 """
-import json, logging, os, subprocess, sys, time, yaml
+import json
+import logging
+import os
+import subprocess
+import sys
+import time
+import yaml
 from pathlib import Path
 
 from ops_daemon._proc import (

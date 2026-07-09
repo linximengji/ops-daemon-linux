@@ -5,7 +5,10 @@ and returns services[] array for inclusion in latest.json.
 
 Service registry YAML lives one directory up from checks/.
 """
-import os, subprocess, socket, asyncio, yaml
+import subprocess
+import socket
+import asyncio
+import yaml
 from pathlib import Path
 from ._probe import get_pid_by_port
 

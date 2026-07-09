@@ -1,5 +1,8 @@
 """Cloudflare Tunnel status check — cloud version."""
-import json, os, time, psutil, subprocess
+import json
+import time
+import psutil
+import subprocess
 
 TUNNEL_NAME = "remote-terminal"
 

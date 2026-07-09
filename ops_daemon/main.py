@@ -1,5 +1,13 @@
 """ops-daemon entry point — state aggregator + task scheduler."""
-import asyncio, json, subprocess, sys, os, time, yaml, traceback
+# ruff: noqa: E402 — agent-core path insertion must happen before those imports
+import asyncio
+import json
+import subprocess
+import sys
+import os
+import time
+import yaml
+import traceback
 from pathlib import Path
 
 try:
@@ -9,6 +17,21 @@ except ImportError:
     _HAS_SD = False
 
 sys.stdout.reconfigure(encoding="utf-8")
+
+import sys as _ag_sys
+_ag_path = str(Path(__file__).resolve().parent.parent.parent / "agent_core")
+if _ag_path not in _ag_sys.path:
+    _ag_sys.path.insert(0, _ag_path)
+from agent_core import BaseDaemon, StateStore, BaselineEngine, AlertManager, Scheduler
+
+from ops_daemon.checks.proxy import check_proxy
+from ops_daemon.checks.cloudflared import check_cloudflared
+from ops_daemon.checks.claudetalk import check_claudetalk, check_mcp_server, check_feishu_bridge
+from ops_daemon.checks.system import check_system
+from ops_daemon.checks.service_registry import check_services
+
+from ops_daemon.notify import notify
+from ops_daemon.llm import diagnose as llm_diagnose
 
 # Load global .env at startup
 _env_path = Path(os.path.expanduser("~/.claude/.env"))
@@ -21,23 +44,6 @@ if _env_path.exists():
         k, v = k.strip(), v.strip().strip("\"'")
         if k not in os.environ:
             os.environ[k] = v
-
-import sys as _ag_sys
-_ag_path = str(Path(__file__).resolve().parent.parent.parent / "agent_core")
-if _ag_path not in _ag_sys.path:
-    _ag_sys.path.insert(0, _ag_path)
-from agent_core import BaseDaemon, StateStore, BaselineEngine, AlertManager, Scheduler
-
-# Retained core checks (special-purpose probe logic)
-from ops_daemon.checks.proxy import check_proxy
-from ops_daemon.checks.cloudflared import check_cloudflared
-from ops_daemon.checks.claudetalk import check_claudetalk, check_mcp_server, check_feishu_bridge
-from ops_daemon.checks.system import check_system
-# Generic registry-driven check
-from ops_daemon.checks.service_registry import check_services
-
-from ops_daemon.notify import notify
-from ops_daemon.llm import diagnose as llm_diagnose
 
 
 def load_config() -> tuple[dict, Path]:
@@ -88,7 +94,8 @@ async def main():
         store.update_working({"daemon": dc["name"], "status": "starting"})
 
     baseline = BaselineEngine(store)
-    alerts = AlertManager(store, cooldown=cfg["alerts"].get("cooldown_seconds", 1800))
+    # AlertManager is kept for future alert integration; remove if unused after refactor
+    _alerts = AlertManager(store, cooldown=cfg["alerts"].get("cooldown_seconds", 1800))
 
     daemon = BaseDaemon(dc["name"], dc, store, heartbeat_path=str(data_dir / "heartbeat"))
     lcfg = cfg.get("llm", {})
@@ -206,7 +213,8 @@ async def main():
         if _dr_p not in _dr_env.get("PYTHONPATH", ""):
             _dr_env["PYTHONPATH"] = _dr_p + ":" + _dr_env.get("PYTHONPATH", "")
         try:
-            result = subprocess.run(cmd, cwd=str(root.parent / "daily_report"), env=_dr_env, capture_output=True, timeout=120)
+            _dr_cwd = str(root.parent / "daily_report")
+            result = subprocess.run(cmd, cwd=_dr_cwd, env=_dr_env, capture_output=True, timeout=120)
             ok = result.returncode == 0
             _write_report_status("daily_report", "done" if ok else "failed")
             print(f"[scheduler] run_daily_report #{_report_count} exit code={result.returncode}")

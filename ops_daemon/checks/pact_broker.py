@@ -1,5 +1,7 @@
 """Pact Broker health check — HTTP GET / (index always 200 when running)."""
-import asyncio, urllib.request, urllib.error
+import asyncio
+import urllib.request
+import urllib.error
 
 PACT_BROKER_URL = "http://localhost:9292"
 HEALTH_PATH = "/"

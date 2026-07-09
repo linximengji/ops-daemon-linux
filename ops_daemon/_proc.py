@@ -1,5 +1,8 @@
 """Cross-platform process/port utilities — single authority for PID & port operations."""
-import os, signal, socket, subprocess, time
+import os
+import signal
+import socket
+import time
 import psutil
 
 

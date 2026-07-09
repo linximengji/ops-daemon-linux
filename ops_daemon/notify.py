@@ -1,5 +1,7 @@
 """Notification dispatch — feishu API + terminal fallback."""
-import json, os, sys
+import json
+import os
+import sys
 import httpx
 
 FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")

@@ -1,5 +1,6 @@
 """Proxy health check — probes main (4000) and backup (4002) ports + HTTP layer."""
-import socket, time
+import socket
+import time
 
 from ._probe import http_probe, get_pid_by_port, get_process_uptime
 

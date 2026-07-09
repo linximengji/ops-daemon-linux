@@ -2,7 +2,6 @@
 
 Platform-specific PID/uptime lookups delegated to ops_daemon._proc."""
 import asyncio
-from datetime import datetime, timezone
 
 from ops_daemon._proc import get_pid_by_port, get_process_uptime
 

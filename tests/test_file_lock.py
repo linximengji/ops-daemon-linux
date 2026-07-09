@@ -1,9 +1,7 @@
 """Tests for ops_daemon.file_lock — cross-process lock utility."""
 import os
 import threading
-import time
 
-import pytest
 
 from ops_daemon.file_lock import acquire_lock, release_lock
 

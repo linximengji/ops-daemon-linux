@@ -17,7 +17,7 @@ services:
 
   claudetalk:
     manager: systemd
-    unit: claudetalk.service
+    unit: claudetalk-default.service
     port: 9876
     display_group: core
     consumers: [dashboard]
@@ -36,10 +36,7 @@ services:
     display_group: core
     consumers: [dashboard, claudetalk]
 
-  cloudflared:
-    manager: orphan
-    display_group: network
-    consumers: [dashboard, claudetalk]
+  # cloudflared — checked by dedicated check_cloudflared (psutil + tunnel info), not via registry
 
   ops-dashboard:
     manager: orphan
@@ -48,32 +45,10 @@ services:
     consumers: [dashboard]
 
   remote-agent:
-    manager: orphan
-    port: 9875
+    manager: systemd
+    unit: remote-agent.service
     display_group: network
     consumers: [dashboard]
 
-  ws-loss-detector:
-    manager: orphan
-    display_group: tools
-    consumers: []
-
-  memory-mcp:
-    manager: orphan
-    display_group: mcp
-    consumers: []
-
-  image-gen-mcp:
-    manager: orphan
-    display_group: mcp
-    consumers: []
-
-  openscad-mcp:
-    manager: orphan
-    display_group: mcp
-    consumers: []
-
-  tasks-mcp:
-    manager: orphan
-    display_group: mcp
-    consumers: []
+  # ws-loss-detector — temporary test tool, omitted
+  # stdio-type MCP servers — started on demand by Claude Code; no ports, not probeable
