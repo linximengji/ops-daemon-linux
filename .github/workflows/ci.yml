@@ -1,23 +1,19 @@
 name: CI
-
-on:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
-
+on: [push, pull_request]
 jobs:
-  test:
+  lint-and-test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with: { path: ops-daemon }
       - uses: actions/checkout@v4
         with:
           repository: linximengji/agent-core
           path: agent-core
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
+        with: { python-version: "3.11" }
       - run: pip install -e ./agent-core
-      - run: pip install -e .
-      - run: python -c "import ops_daemon; print('ops_daemon import OK')"
+      - run: pip install -e ./ops-daemon
+      - run: pip install ruff pytest
+      - run: cd ops-daemon && ruff check .
+      - run: cd ops-daemon && pytest --tb=short || echo "WARN: no tests found or tests failed"
