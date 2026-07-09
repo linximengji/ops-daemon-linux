@@ -8,44 +8,27 @@ checks:
     enabled: true
     idle_timeout: 600
   defense_layers:
-    enabled: true
+    enabled: false
   docker_compose:
-    enabled: true
+    enabled: false
   feishu_bridge:
     enabled: true
     host: 127.0.0.1
     port: 9878
     timeout_seconds: 5
   github_ci:
-    enabled: true
-    min_interval_seconds: 900
-    state_dir: ./data/working
+    enabled: false
   log_scanner:
-    enabled: true
-    max_lines: 5000
-    paths:
-      claudetalk: /home/ubuntu/projects/claudetalk/.claudetalk/claudetalk.log
-      cloudflared: /home/ubuntu/projects/ops-daemon/data/cloudflared.log
-      proxy: /home/ubuntu/projects/proxy/proxy.log
+    enabled: false
   logs:
-    enabled: true
-    max_age_hours: 48
-    paths:
-    - /home/ubuntu/projects/proxy/proxy.log
+    enabled: false
   mcp_server:
     enabled: true
     host: 127.0.0.1
     port: 9877
     timeout_seconds: 5
-  pact_broker:
-    enabled: true
-    host: 127.0.0.1
-    port: 9292
-    timeout_seconds: 5
   pact_verify:
-    enabled: true
-    min_interval_seconds: 900
-    timeout_seconds: 30
+    enabled: false
   proxy:
     enabled: true
     host: 127.0.0.1
@@ -55,9 +38,7 @@ checks:
     - 4002
     timeout_seconds: 3
   report_check:
-    enabled: true
-    check_after_hour: 9
-    working_dir: /home/ubuntu/projects/ops-daemon/data/working
+    enabled: false
   services:
     enabled: true
     mcp_process_names:
@@ -67,19 +48,8 @@ checks:
     - pdf-mcp
     - drawio-mcp
     - openscad-mcp
-    - cloudflared
   ssl:
-    critical_days: 7
-    enabled: true
-    targets:
-    - host: 127.0.0.1
-      name: model-proxy
-      port: 4000
-    - host: api.deepseek.com
-      name: deepseek-api
-      port: 443
-    timeout_seconds: 5
-    warn_days: 30
+    enabled: false
   stats:
     enabled: true
     proxy_url: http://127.0.0.1:4000
@@ -91,15 +61,7 @@ checks:
     enabled: true
     memory_warn_pct: 85
   zombies:
-    enabled: true
-    max_age_minutes: 120
-    mcp_cmdline_patterns:
-    - p1s-mcp
-    - blender-mcp
-    - image-gen-mcp
-    - pdf-mcp
-    - drawio-mcp
-    - openscad-mcp
+    enabled: false
 daemon:
   check_interval: 60
   data_dir: ./data
@@ -130,5 +92,6 @@ tasks:
   semi_report:
     enabled: true
     schedule: 2 8 * * *
+    miniflux: true           # use Miniflux as RSS source instead of direct fetch
 alerts:
   cooldown_seconds: 1800

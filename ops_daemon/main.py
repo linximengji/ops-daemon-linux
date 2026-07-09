@@ -1,13 +1,12 @@
-"""ops-daemon entry point — monitoring-only, no process management."""
+"""ops-daemon entry point — state aggregator + task scheduler."""
 import asyncio, json, subprocess, sys, os, time, yaml, traceback
 from pathlib import Path
 
 try:
-    import systemd.daemon as sd  # systemd watchdog support (python3-systemd)
+    import systemd.daemon as sd
     _HAS_SD = True
 except ImportError:
     _HAS_SD = False
-
 
 sys.stdout.reconfigure(encoding="utf-8")
 
@@ -28,20 +27,15 @@ _ag_path = str(Path(__file__).resolve().parent.parent.parent / "agent_core")
 if _ag_path not in _ag_sys.path:
     _ag_sys.path.insert(0, _ag_path)
 from agent_core import BaseDaemon, StateStore, BaselineEngine, AlertManager, Scheduler
+
+# Retained core checks (special-purpose probe logic)
 from ops_daemon.checks.proxy import check_proxy
 from ops_daemon.checks.cloudflared import check_cloudflared
 from ops_daemon.checks.claudetalk import check_claudetalk, check_mcp_server, check_feishu_bridge
-from ops_daemon.checks.services import check_processes
 from ops_daemon.checks.system import check_system
-from ops_daemon.checks.ssl import check_ssl
-from ops_daemon.checks.logs import check_logs
-from ops_daemon.checks.zombies import check_zombies
-from ops_daemon.checks.report_check import check_report
-from ops_daemon.checks.service_discovery import check_service_discovery
-from ops_daemon.checks.pact_verify import check_pact_verify
-from ops_daemon.checks.compose_up import check_compose_up
-from ops_daemon.checks.defense_layers import check_defense_layers
-from ops_daemon.checks.github_ci import check_github_ci
+# Generic registry-driven check
+from ops_daemon.checks.service_registry import check_services
+
 from ops_daemon.notify import notify
 from ops_daemon.llm import diagnose as llm_diagnose
 
@@ -57,11 +51,20 @@ async def main():
     cfg, root = load_config()
     dc = cfg["daemon"]
     cc = cfg["checks"]
-    nc = cfg.get("notify", {})
     data_dir = root / dc["data_dir"]
     store = StateStore(str(data_dir))
 
-    # Simple PID file — no locking, no singleton enforcement
+    # Rotate stdout/stderr on each start so they don't grow unbounded
+    _log_dir = root / "data"
+    for lname in ("daemon_stdout.log", "daemon_stderr.log"):
+        lp = _log_dir / lname
+        if lp.exists() and lp.stat().st_size > 5 * 1024 * 1024:
+            rotated = _log_dir / f"{lname}.old"
+            rotated.unlink(missing_ok=True)
+            lp.rename(rotated)
+
+    store.cleanup_episodic(keep_days=30)
+
     pid_path = root / "data" / "daemon.pid"
     pid_path.parent.mkdir(parents=True, exist_ok=True)
     pid_path.write_text(str(os.getpid()), encoding="utf-8")
@@ -73,27 +76,14 @@ async def main():
     alerts = AlertManager(store, cooldown=cfg["alerts"].get("cooldown_seconds", 1800))
 
     daemon = BaseDaemon(dc["name"], dc, store, heartbeat_path=str(data_dir / "heartbeat"))
+    lcfg = cfg.get("llm", {})
 
+    # ── Retained core checks (special probe logic) ──
     if cc["proxy"]["enabled"]:
         daemon.register_check("proxy", lambda: check_proxy(cc["proxy"], store, baseline))
 
-    if cc["services"]["enabled"]:
-        daemon.register_check("services", lambda: check_processes(cc["services"]))
-
     if cc["system"]["enabled"]:
         daemon.register_check("system", lambda: check_system(cc["system"], store, baseline))
-
-    if cc.get("ssl", {}).get("enabled", False):
-        daemon.register_check("ssl", lambda: check_ssl(cc["ssl"], store))
-
-    if cc.get("logs", {}).get("enabled", False):
-        daemon.register_check("logs", lambda: check_logs(cc["logs"], store))
-
-    if cc.get("zombies", {}).get("enabled", False):
-        daemon.register_check("zombies", lambda: check_zombies(cc["zombies"]))
-
-    if cc.get("report_check", {}).get("enabled", False):
-        daemon.register_check("report_check", lambda: check_report(cc["report_check"], store))
 
     if cc.get("claudetalk", {}).get("enabled", False):
         daemon.register_check("claudetalk", lambda: check_claudetalk(cc["claudetalk"], store))
@@ -107,33 +97,48 @@ async def main():
     if cc.get("cloudflared", {}).get("enabled", False):
         daemon.register_check("cloudflared", lambda: check_cloudflared(cc["cloudflared"], store))
 
-    if cc.get("service_discovery", {}).get("enabled", False):
-        daemon.register_check("service_discovery", lambda: check_service_discovery(cc["service_discovery"], store))
+    # ── Managed check — deprecated status aggregator, will be replaced when all services
+    #     migrate to systemd. Currently a pass-through for abandoned-format consumers.
 
-    if cc.get("pact_verify", {}).get("enabled", False):
-        daemon.register_check("pact_verify", lambda: check_pact_verify(cc["pact_verify"], store, alerts))
+    # ── Generic registry check — probes all services listed in service-registry.yaml ──
+    daemon.register_check("services", check_services)
 
-    if cc.get("docker_compose", {}).get("enabled", False):
-        daemon.register_check("docker_compose", lambda: check_compose_up(cc["docker_compose"], store))
-
-    if cc.get("defense_layers", {}).get("enabled", False):
-        daemon.register_check("defense_layers", lambda: check_defense_layers(cc["defense_layers"], store))
-
-    if cc.get("github_ci", {}).get("enabled", False):
-        daemon.register_check("github_ci", lambda: check_github_ci(cc["github_ci"], store))
-
-    lcfg = cfg.get("llm", {})
-
-    # Service status history for up→stopped detection (persisted via working)
+    # ── on_check_complete: build unified output ──
     _prev_checks: dict = {}
+    _stopped_count: dict = {}
+    # Persist report_status to disk so daemon restart doesn't lose it
+    _report_status_path = root / "data" / "working" / "_report_status.json"
+
+    def _write_report_status(task_type: str, status: str):
+        data = {"semi_report": {"status": "pending"}, "daily_report": {"status": "pending"}}
+        if _report_status_path.exists():
+            try:
+                data = json.loads(_report_status_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                pass
+        data[task_type] = {"status": status, "ts": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        _report_status_path.write_text(json.dumps(data, ensure_ascii=False))
+
+    def _load_report_status() -> dict:
+        if not _report_status_path.exists():
+            return {"semi_report": {"status": "pending"}, "daily_report": {"status": "pending"}}
+        try:
+            return json.loads(_report_status_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {"semi_report": {"status": "pending"}, "daily_report": {"status": "pending"}}
 
     @daemon.on_check_complete
     async def on_checks(checks: dict):
-        nonlocal _prev_checks
-        # systemd watchdog notification — tells systemd the daemon is alive
+        nonlocal _prev_checks, _stopped_count
         if _HAS_SD:
             sd.notify("WATCHDOG=1")
-        # Detect service status transitions: up → stopped
+
+        # Re-inject report_status into latest.json (BaseDaemon.run() wrote without it)
+        checks["report_status"] = _load_report_status()
+        # Manually flush to disk so the current cycle includes report_status
+        store.update_working(checks)
+
+        # Service transition alerts (2 consecutive stopped rounds to debounce)
         _MONITORED_SERVICES = ('feishu_bridge', 'claudetalk', 'mcp_server', 'cloudflared', 'proxy')
         for name in _MONITORED_SERVICES:
             cur = checks.get(name, {})
@@ -141,13 +146,20 @@ async def main():
             if isinstance(cur, dict) and isinstance(prev, dict):
                 cur_status = cur.get('status')
                 prev_status = prev.get('status')
-                if prev_status == 'up' and cur_status == 'stopped':
-                    await notify('WARN', f'{name} 已停止',
-                                 f'服务 {name} 从运行状态变为停止。\n'
-                                 f'PID: {prev.get("pid", "?")} → 已退出\n'
-                                 f'请及时检查 systemd 状态')
+                if cur_status == 'stopped':
+                    c = _stopped_count.get(name, 0) + 1
+                    _stopped_count[name] = c
+                    if c >= 2 and prev_status == 'up':
+                        await notify('WARN', f'{name} 已停止',
+                                     f'服务 {name} 从运行状态变为停止。\n'
+                                     f'PID: {prev.get("pid", "?")} → 已退出\n'
+                                     f'请及时检查 systemd 状态')
+                else:
+                    _stopped_count[name] = 0
+
         _prev_checks = dict(checks)
-        # LLM diagnosis — purely passive, no repair
+
+        # LLM diagnosis — purely passive
         if lcfg.get("enabled", False) and lcfg.get("diagnosis", False):
             criticals = [(k, v) for k, v in checks.items()
                          if isinstance(v, dict) and v.get("status") in ("critical",)]
@@ -156,18 +168,9 @@ async def main():
                 diagnosis = await llm_diagnose(f"{name}_critical", {"result": result}, recent)
                 store.append_episodic({"type": "llm_diagnosis", "check": name, "text": diagnosis})
 
+    # ── Scheduler ──
     scheduler = Scheduler(persist_path=str(root / "data" / "tasks.json"))
-
     tcfg = cfg.get("tasks", {})
-
-    _sentinel_dir = root / "data" / "working"
-
-    def _write_report_sentinel():
-        today = time.strftime("%Y-%m-%d")
-        sentinel_path = _sentinel_dir / f"report-sent-{today}.sentinel"
-        sentinel_path.write_text("sent")
-        print(f"[scheduler] sentinel written: {sentinel_path}")
-
     _report_count = 0
 
     def run_report():
@@ -183,18 +186,22 @@ async def main():
         sec_cfg = tcfg.get("daily_report", {}).get("sections", {})
         if sec_cfg:
             cmd += ["--section-config", json.dumps(sec_cfg)]
-        _dr_env = {**__import__("os").environ}
+        _dr_env = {**os.environ}
         _dr_p = str(root.parent)
         if _dr_p not in _dr_env.get("PYTHONPATH", ""):
             _dr_env["PYTHONPATH"] = _dr_p + ":" + _dr_env.get("PYTHONPATH", "")
-        result = subprocess.run(cmd, cwd=str(root.parent / "daily_report"), env=_dr_env, capture_output=True, timeout=120)
-        print(f"[scheduler] run_daily_report #{_report_count} exit code={result.returncode}")
-        if result.stdout:
-            print(f"[scheduler] stdout:\n{result.stdout.decode('utf-8', errors='replace')}")
-        if result.stderr:
-            print(f"[scheduler] stderr:\n{result.stderr.decode('utf-8', errors='replace')}")
-        if result.returncode == 0:
-            _write_report_sentinel()
+        try:
+            result = subprocess.run(cmd, cwd=str(root.parent / "daily_report"), env=_dr_env, capture_output=True, timeout=120)
+            ok = result.returncode == 0
+            _write_report_status("daily_report", "done" if ok else "failed")
+            print(f"[scheduler] run_daily_report #{_report_count} exit code={result.returncode}")
+            if result.stdout:
+                print(f"[scheduler] stdout:\n{result.stdout.decode('utf-8', errors='replace')}")
+            if result.stderr:
+                print(f"[scheduler] stderr:\n{result.stderr.decode('utf-8', errors='replace')}")
+        except Exception as e:
+            _write_report_status("daily_report", "failed")
+            print(f"[scheduler] run_daily_report #{_report_count} exception: {e}")
 
     if tcfg.get("daily_report", {}).get("enabled", True):
         scheduler.add_task("daily_report", tcfg["daily_report"]["schedule"], run_report)
@@ -205,28 +212,34 @@ async def main():
         nonlocal _semi_count
         _semi_count += 1
         print(f"[scheduler] run_semi_report called #{_semi_count}")
-        result = subprocess.run(
-            ["npx", "tsx", "src/pipeline.ts"],
-            cwd=str(root.parent / "semi-report"),
-            capture_output=True, timeout=600,
-        )
-        print(f"[scheduler] run_semi_report #{_semi_count} exit code={result.returncode}")
-        if result.stdout:
-            print(f"[scheduler] stdout:\n{result.stdout.decode('utf-8', errors='replace')}")
-        if result.returncode == 0:
-            _write_report_sentinel()
+        try:
+            env = os.environ.copy()
+            if tcfg.get("semi_report", {}).get("miniflux", False):
+                env["MINIFLUX_ENABLED"] = "1"
+            result = subprocess.run(
+                ["npx", "tsx", "src/pipeline.ts"],
+                cwd=str(root.parent / "semi-report"),
+                capture_output=True, timeout=600, env=env,
+            )
+            ok = result.returncode == 0
+            _write_report_status("semi_report", "done" if ok else "failed")
+            print(f"[scheduler] run_semi_report #{_semi_count} exit code={result.returncode}")
+            if result.stdout:
+                print(f"[scheduler] stdout:\n{result.stdout.decode('utf-8', errors='replace')}")
+        except Exception as e:
+            _write_report_status("semi_report", "failed")
+            print(f"[scheduler] run_semi_report #{_semi_count} exception: {e}")
 
     if tcfg.get("semi_report", {}).get("enabled", True):
         scheduler.add_task("semi_report", tcfg["semi_report"]["schedule"], run_semi_report)
 
     scheduler.start()
     store.append_episodic({"type": "daemon_start", "message": f"{dc['name']} started"})
-    # sd_notify READY=1 tells systemd the daemon has initialized fully
     if _HAS_SD:
         sd.notify("READY=1")
     await notify("INFO", f"{dc['name']} started", f"PID {os.getpid()}")
 
-    # crash-recovery: if last exit was a crash, notify after 3 minutes of stability
+    # crash-recovery detection
     _recent = store.load_episodic(days=1)
     _was_crash = any(e.get("type") == "daemon_crash" for e in _recent[-20:])
     if _was_crash:
@@ -258,20 +271,16 @@ async def main():
 
 
 if __name__ == "__main__":
-    # Redirect stderr → daemon_stderr.log for process-level crashes
-    # (segfault, OOM kill, C extension error) that bypass Python exception handling.
     _err_log = Path(__file__).parent.parent / "data" / "daemon_stderr.log"
     try:
         sys.stderr = open(_err_log, "a", encoding="utf-8", buffering=1)
     except Exception:
         pass
-    # Also redirect stdout so all print() output is captured for post-mortem.
     _out_log = Path(__file__).parent.parent / "data" / "daemon_stdout.log"
     try:
         sys.stdout = open(_out_log, "a", encoding="utf-8", buffering=1)
     except Exception:
         pass
-    # Global exception guard: catches anything main()'s internal except misses.
     try:
         asyncio.run(main())
     except BaseException:

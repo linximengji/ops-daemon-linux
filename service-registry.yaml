@@ -1,0 +1,79 @@
+version: 1
+
+# service-registry.yaml — declarative inventory of all long-running services
+# on this machine. ops-daemon uses this to build the services[] array in latest.json.
+#
+# manager: how the service is kept alive
+#   systemd   — managed by systemd user service, daemon checks via systemctl is-active
+#   orphan    — no process manager, daemon probes port or PID
+#             NOT managed by daemon (no restart/repair)
+services:
+  model-proxy:
+    manager: systemd
+    unit: model-proxy.service
+    port: 4000
+    display_group: core
+    consumers: [dashboard, claudetalk, daily-report]
+
+  claudetalk:
+    manager: systemd
+    unit: claudetalk.service
+    port: 9876
+    display_group: core
+    consumers: [dashboard]
+
+  feishu-bridge:
+    manager: systemd
+    unit: feishu-bridge.service
+    port: 9878
+    display_group: core
+    consumers: [dashboard]
+
+  claudetalk-mcp:
+    manager: systemd
+    unit: claudetalk-mcp.service
+    port: 9877
+    display_group: core
+    consumers: [dashboard, claudetalk]
+
+  cloudflared:
+    manager: orphan
+    display_group: network
+    consumers: [dashboard, claudetalk]
+
+  ops-dashboard:
+    manager: orphan
+    port: 8765
+    display_group: network
+    consumers: [dashboard]
+
+  remote-agent:
+    manager: orphan
+    port: 9875
+    display_group: network
+    consumers: [dashboard]
+
+  ws-loss-detector:
+    manager: orphan
+    display_group: tools
+    consumers: []
+
+  memory-mcp:
+    manager: orphan
+    display_group: mcp
+    consumers: []
+
+  image-gen-mcp:
+    manager: orphan
+    display_group: mcp
+    consumers: []
+
+  openscad-mcp:
+    manager: orphan
+    display_group: mcp
+    consumers: []
+
+  tasks-mcp:
+    manager: orphan
+    display_group: mcp
+    consumers: []
