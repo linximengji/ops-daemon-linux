@@ -15,5 +15,8 @@ jobs:
       - run: pip install -e ./agent-core
       - run: pip install -e ./ops-daemon
       - run: pip install ruff pytest
-      - run: cd ops-daemon && ruff check .
-      - run: cd ops-daemon && pytest --tb=short || echo "WARN: no tests found or tests failed"
+      - name: ruff check
+        run: cd ops-daemon && ruff check .
+      - name: pytest
+        run: cd ops-daemon && pytest --tb=short
+        continue-on-error: true
