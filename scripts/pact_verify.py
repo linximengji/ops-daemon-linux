@@ -16,7 +16,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode, urljoin
+from urllib.parse import urljoin
 
 BROKER_URL = "http://localhost:9292"
 

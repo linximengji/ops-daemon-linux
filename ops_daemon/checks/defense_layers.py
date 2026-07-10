@@ -141,7 +141,7 @@ async def _check_l3_git(cfg: dict) -> dict:
                     "git", "-C", proj_path, "status", "--porcelain",
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 out, _ = await asyncio.wait_for(r.communicate(), timeout=5)
-                uncommitted = len([l for l in out.decode("utf-8", errors="replace").splitlines() if l.strip()])
+                uncommitted = len([line for line in out.decode("utf-8", errors="replace").splitlines() if line.strip()])
             except (subprocess.TimeoutExpired, asyncio.TimeoutError):
                 uncommitted = -1
 
@@ -156,7 +156,7 @@ async def _check_l3_git(cfg: dict) -> dict:
             if "no upstream" in err_str.lower() or r.returncode != 0:
                 unpushed = 0
             else:
-                unpushed = len([l for l in out.decode("utf-8", errors="replace").splitlines() if l.strip()])
+                unpushed = len([line for line in out.decode("utf-8", errors="replace").splitlines() if line.strip()])
         except (subprocess.TimeoutExpired, asyncio.TimeoutError):
             unpushed = -1
 
@@ -189,7 +189,7 @@ async def _git_has_changes(path: str) -> bool:
             "git", "-C", path, "status", "--porcelain",
             stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         out, _ = await asyncio.wait_for(r.communicate(), timeout=3)
-        return any(l.strip() for l in out.decode("utf-8", errors="replace").splitlines())
+        return any(line.strip() for line in out.decode("utf-8", errors="replace").splitlines())
     except (subprocess.TimeoutExpired, asyncio.TimeoutError):
         return False
 
