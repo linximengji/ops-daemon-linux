@@ -8,7 +8,7 @@ checks:
     enabled: true
     idle_timeout: 600
   defense_layers:
-    enabled: false
+    enabled: true
   docker_compose:
     enabled: false
   feishu_bridge:
@@ -28,7 +28,8 @@ checks:
     port: 9877
     timeout_seconds: 5
   pact_verify:
-    enabled: false
+    enabled: true
+    min_interval: 300
   proxy:
     enabled: true
     host: 127.0.0.1

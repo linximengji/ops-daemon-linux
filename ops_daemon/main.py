@@ -8,6 +8,7 @@ import os
 import time
 import yaml
 import traceback
+import fcntl
 from pathlib import Path
 
 try:
@@ -66,12 +67,14 @@ async def main():
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import Resource
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
         _provider = TracerProvider(resource=Resource.create({"service.name": "ops-daemon"}))
         _provider.add_span_processor(BatchSpanProcessor(
             OTLPSpanExporter(endpoint="http://localhost:4317", insecure=True)))
         trace.set_tracer_provider(_provider)
-    except Exception:
-        pass  # OTel is optional — daemon runs fine without it
+        HTTPXClientInstrumentor().instrument()
+    except Exception as _otel_err:
+        print(f"[main] OTel init failed (non-fatal): {_otel_err}")
 
     store = StateStore(str(data_dir))
 
@@ -88,7 +91,16 @@ async def main():
 
     pid_path = root / "data" / "daemon.pid"
     pid_path.parent.mkdir(parents=True, exist_ok=True)
-    pid_path.write_text(str(os.getpid()), encoding="utf-8")
+    _pid_file = open(pid_path, "a+")
+    try:
+        fcntl.flock(_pid_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("[main] another daemon holds the PID lock — exiting")
+        sys.exit(0)
+    _pid_file.seek(0)
+    _pid_file.truncate()
+    _pid_file.write(str(os.getpid()))
+    _pid_file.flush()
 
     if not store.load_working():
         store.update_working({"daemon": dc["name"], "status": "starting"})
@@ -124,6 +136,15 @@ async def main():
 
     # ── Generic registry check — probes all services listed in service-registry.yaml ──
     daemon.register_check("services", check_services)
+
+    # ── Defense layers check — aggregate L1 (Pact Broker) + L2 (Jaeger) + L3 (Git diff) ──
+    if cc.get("defense_layers", {}).get("enabled", False):
+        from ops_daemon.checks.defense_layers import check_defense_layers
+        daemon.register_check("defense_layers", lambda: check_defense_layers(cc.get("defense_layers", {})))
+
+    if cc.get("pact_verify", {}).get("enabled", False):
+        from ops_daemon.checks.pact_verify import check_pact_verify
+        daemon.register_check("pact_verify", lambda: check_pact_verify(cc.get("pact_verify", {}), store))
 
     # ── on_check_complete: build unified output ──
     _prev_checks: dict = {}
@@ -290,6 +311,7 @@ async def main():
             await notify("INFO", f"{dc['name']} stopped", f"PID {os.getpid()}")
         except Exception:
             pass
+        _pid_file.close()  # releases flock
         pid_path.unlink(missing_ok=True)
 
 

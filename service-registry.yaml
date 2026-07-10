@@ -17,7 +17,7 @@ services:
 
   claudetalk:
     manager: systemd
-    unit: claudetalk-default.service
+    unit: claudetalk.service
     port: 9876
     display_group: core
     consumers: [dashboard]
