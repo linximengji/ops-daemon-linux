@@ -30,6 +30,7 @@ from ops_daemon.checks.cloudflared import check_cloudflared
 from ops_daemon.checks.claudetalk import check_claudetalk, check_mcp_server, check_feishu_bridge
 from ops_daemon.checks.system import check_system
 from ops_daemon.checks.service_registry import check_services
+from ops_daemon.checks.trip_scanner import check_trip_scanner
 
 from ops_daemon.notify import notify
 from ops_daemon.llm import diagnose as llm_diagnose
@@ -141,6 +142,9 @@ async def main():
     if cc.get("defense_layers", {}).get("enabled", False):
         from ops_daemon.checks.defense_layers import check_defense_layers
         daemon.register_check("defense_layers", lambda: check_defense_layers(cc.get("defense_layers", {})))
+
+    if cc.get("trip_scanner", {}).get("enabled", False):
+        daemon.register_check("trip_scanner", lambda: check_trip_scanner(cc["trip_scanner"], store))
 
     if cc.get("pact_verify", {}).get("enabled", False):
         from ops_daemon.checks.pact_verify import check_pact_verify

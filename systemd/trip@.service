@@ -1,0 +1,16 @@
+[Unit]
+Description=Trip Assistant: %i
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/home/ubuntu/.claude/.env
+ExecStart=/usr/bin/python3 -m ops_daemon.trip_runner %i
+WorkingDirectory=/home/ubuntu/projects/ops-daemon
+Restart=no
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

@@ -51,6 +51,8 @@ checks:
     - openscad-mcp
   ssl:
     enabled: false
+  trip_scanner:
+    enabled: true
   stats:
     enabled: true
     proxy_url: http://127.0.0.1:4000
