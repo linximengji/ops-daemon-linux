@@ -96,5 +96,8 @@ tasks:
     enabled: true
     schedule: 2 8 * * *
     miniflux: true           # use Miniflux as RSS source instead of direct fetch
+  twin_gap_push:
+    enabled: true
+    schedule: 0 10,14,20 * * *
 alerts:
   cooldown_seconds: 1800

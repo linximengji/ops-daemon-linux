@@ -18,8 +18,8 @@ _travel_mcp = Path(__file__).resolve().parent.parent.parent / "travel-mcp"
 if str(_travel_mcp) not in sys.path:
     sys.path.insert(0, str(_travel_mcp))
 
-from weather import get_weather
-from poi import search_poi
+from weather import get_weather  # noqa: E402
+from poi import search_poi  # noqa: E402
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "trips"
 FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
@@ -238,7 +238,13 @@ def _get_weather_text(loc: dict) -> str:
             return ""
         live = w.get("live", {})
         if live:
-            return f"{live.get('weather', '?')} {live.get('temperature', '?')}°C  {live.get('wind', '')} {live.get('wind_power', '')}"
+            weather_parts = [
+                live.get("weather", "?"),
+                f"{live.get('temperature', '?')}°C",
+                live.get("wind", ""),
+                live.get("wind_power", ""),
+            ]
+            return "  ".join(p for p in weather_parts if p)
         forecast = w.get("forecast", [])
         if forecast:
             f0 = forecast[0]
@@ -326,7 +332,11 @@ async def run_trip(trip_id: str):
 
     # Snapshot weather at start for change detection
     dest_loc = pending[-1].get("location", {})
-    coords = f"{dest_loc.get('lng', '')},{dest_loc.get('lat', '')}" if dest_loc.get("lng") and dest_loc.get("lat") else ""
+    coords = (
+        f"{dest_loc['lng']},{dest_loc['lat']}"
+        if dest_loc.get("lng") and dest_loc.get("lat")
+        else ""
+    )
     city = dest_loc.get("city", "")
     loop = asyncio.get_running_loop()
 

@@ -281,6 +281,29 @@ async def main():
     if tcfg.get("semi_report", {}).get("enabled", True):
         scheduler.add_task("semi_report", tcfg["semi_report"]["schedule"], run_semi_report)
 
+    def run_twin_gap_push():
+        print("[scheduler] run_twin_gap_push called")
+        try:
+            result = subprocess.run(
+                ["python3", "-c",
+                 "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
+                 "from twin.gap_detector import detect_and_push_gaps\n"
+                 "import json\n"
+                 "print(json.dumps(detect_and_push_gaps(max_count=1), ensure_ascii=False))"],
+                capture_output=True, timeout=120,
+            )
+            ok = result.returncode == 0
+            print(f"[scheduler] twin_gap_push exit={result.returncode} ok={ok}")
+            if result.stdout:
+                print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()}")
+            if result.stderr:
+                print(f"[scheduler] stderr: {result.stderr.decode('utf-8', errors='replace')[:500]}")
+        except Exception as e:
+            print(f"[scheduler] twin_gap_push exception: {e}")
+
+    if tcfg.get("twin_gap_push", {}).get("enabled", False):
+        scheduler.add_task("twin_gap_push", tcfg["twin_gap_push"]["schedule"], run_twin_gap_push)
+
     scheduler.start()
     store.append_episodic({"type": "daemon_start", "message": f"{dc['name']} started"})
     if _HAS_SD:
