@@ -92,6 +92,8 @@ tasks:
         dow: '5'
       tool_audit:
         dow: '1'
+      twin_health_deep:
+        dow: '2'
   semi_report:
     enabled: true
     schedule: 2 8 * * *
