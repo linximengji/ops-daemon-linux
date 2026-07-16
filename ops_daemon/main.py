@@ -8,7 +8,6 @@ import os
 import time
 import yaml
 import traceback
-import fcntl
 from pathlib import Path
 
 try:
@@ -89,19 +88,6 @@ async def main():
             lp.rename(rotated)
 
     store.cleanup_episodic(keep_days=30)
-
-    pid_path = root / "data" / "daemon.pid"
-    pid_path.parent.mkdir(parents=True, exist_ok=True)
-    _pid_file = open(pid_path, "a+")
-    try:
-        fcntl.flock(_pid_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print("[main] another daemon holds the PID lock — exiting")
-        sys.exit(0)
-    _pid_file.seek(0)
-    _pid_file.truncate()
-    _pid_file.write(str(os.getpid()))
-    _pid_file.flush()
 
     if not store.load_working():
         store.update_working({"daemon": dc["name"], "status": "starting"})
@@ -239,7 +225,7 @@ async def main():
             _dr_env["PYTHONPATH"] = _dr_p + ":" + _dr_env.get("PYTHONPATH", "")
         try:
             _dr_cwd = str(root.parent / "daily_report")
-            result = subprocess.run(cmd, cwd=_dr_cwd, env=_dr_env, capture_output=True, timeout=120)
+            result = subprocess.run(cmd, cwd=_dr_cwd, env=_dr_env, capture_output=True, timeout=300)
             ok = result.returncode == 0
             _write_report_status("daily_report", "done" if ok else "failed")
             print(f"[scheduler] run_daily_report #{_report_count} exit code={result.returncode}")
@@ -338,8 +324,6 @@ async def main():
             await notify("INFO", f"{dc['name']} stopped", f"PID {os.getpid()}")
         except Exception:
             pass
-        _pid_file.close()  # releases flock
-        pid_path.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
