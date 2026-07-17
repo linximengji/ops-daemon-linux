@@ -18,6 +18,19 @@ except ImportError:
 
 sys.stdout.reconfigure(encoding="utf-8")
 
+# ── Single-instance lock ──
+_LOCK_PATH = Path(__file__).resolve().parent.parent / "data" / ".daemon.lock"
+try:
+    import fcntl
+    _lock_fd = os.open(str(_LOCK_PATH), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(f"[main] Another instance is already running (lock held at {_LOCK_PATH}). Exiting.")
+        sys.exit(1)
+except ImportError:
+    pass  # Windows — no fcntl, skip lock
+
 import sys as _ag_sys
 _ag_path = str(Path(__file__).resolve().parent.parent.parent / "agent_core")
 if _ag_path not in _ag_sys.path:
