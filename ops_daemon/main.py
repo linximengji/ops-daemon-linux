@@ -283,13 +283,18 @@ async def main():
     def run_twin_gap_push():
         print("[scheduler] run_twin_gap_push called")
         try:
+            # Inject twin bot credentials so gap_detector pushes via twin bot
+            twin_env = os.environ.copy()
+            twin_env["FEISHU_APP_ID"] = os.environ.get("TWIN_FEISHU_APP_ID", os.environ.get("FEISHU_APP_ID", ""))
+            twin_env["FEISHU_APP_SECRET"] = os.environ.get("TWIN_FEISHU_APP_SECRET", os.environ.get("FEISHU_APP_SECRET", ""))
+            twin_env["FEISHU_RECEIVE_ID"] = os.environ.get("TWIN_FEISHU_RECEIVE_ID", os.environ.get("FEISHU_RECEIVE_ID", ""))
             result = subprocess.run(
                 ["python3", "-c",
                  "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
                  "from twin.gap_detector import detect_and_push_gaps\n"
                  "import json\n"
-                 "print(json.dumps(detect_and_push_gaps(max_count=1), ensure_ascii=False))"],
-                capture_output=True, timeout=120,
+                 "print(json.dumps(detect_and_push_gaps(max_count=3), ensure_ascii=False))"],
+                capture_output=True, timeout=120, env=twin_env,
             )
             ok = result.returncode == 0
             print(f"[scheduler] twin_gap_push exit={result.returncode} ok={ok}")

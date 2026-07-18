@@ -22,9 +22,10 @@ from weather import get_weather  # noqa: E402
 from poi import search_poi  # noqa: E402
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "trips"
-FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
-FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET")
-RECEIVE_ID = os.environ.get("FEISHU_RECEIVE_ID", "ou_6a6b52dc63d4051834ae522a3a6e7775")
+# Trip bot credentials (TRIP_FEISHU_* take priority, fall back to generic FEISHU_*)
+FEISHU_APP_ID = os.environ.get("TRIP_FEISHU_APP_ID") or os.environ.get("FEISHU_APP_ID")
+FEISHU_APP_SECRET = os.environ.get("TRIP_FEISHU_APP_SECRET") or os.environ.get("FEISHU_APP_SECRET")
+RECEIVE_ID = os.environ.get("TRIP_FEISHU_RECEIVE_ID") or os.environ.get("FEISHU_RECEIVE_ID", "ou_6a6b52dc63d4051834ae522a3a6e7775")
 
 _tz = timezone(datetime.now().astimezone().utcoffset())
 _executor = ThreadPoolExecutor(max_workers=2)
@@ -55,17 +56,18 @@ async def _get_token() -> str | None:
         return r.json().get("tenant_access_token")
 
 
-async def _send_card(payload: dict) -> bool:
+async def _send_card(payload: dict, receive_id: str = "", receive_id_type: str = "open_id") -> bool:
     token = await _get_token()
     if not token:
         print("[trip_runner] no feishu token, skip card")
         return False
+    target = receive_id or RECEIVE_ID
     async with httpx.AsyncClient(timeout=10) as c:
         r = await c.post(
-            "https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id",
+            f"https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type={receive_id_type}",
             headers={"Authorization": f"Bearer {token}"},
             json={
-                "receive_id": RECEIVE_ID,
+                "receive_id": target,
                 "msg_type": "interactive",
                 "content": json.dumps(payload, ensure_ascii=False),
             },
@@ -328,7 +330,9 @@ async def run_trip(trip_id: str):
         _archive(trip)
         return
 
-    await _send_card(_build_start_card(trip, pending))
+    trip_chat_id = trip.get("chat_id", "")
+    _send_kwargs = {"receive_id": trip_chat_id, "receive_id_type": "chat_id"} if trip_chat_id else {}
+    await _send_card(_build_start_card(trip, pending), **_send_kwargs)
 
     # Snapshot weather at start for change detection
     dest_loc = pending[-1].get("location", {})
@@ -362,7 +366,7 @@ async def run_trip(trip_id: str):
                 current_w = await loop.run_in_executor(_executor, _fetch_w)
                 alert_card = _build_weather_alert_card(trip, current_w, trip["last_weather"])
                 if alert_card:
-                    await _send_card(alert_card)
+                    await _send_card(alert_card, **_send_kwargs)
                 trip["last_weather"] = current_w
                 _save_trip(trip)
             except Exception as e:
@@ -384,7 +388,7 @@ async def run_trip(trip_id: str):
                 else:
                     card = _build_node_card(node)
 
-                await _send_card(card)
+                await _send_card(card, **_send_kwargs)
                 notified.add(node_key)
 
             if now >= node_time:
@@ -409,7 +413,7 @@ async def run_trip(trip_id: str):
 
     trip = _load_trip(trip_id)
     if trip:
-        await _send_card(_build_end_card(trip))
+        await _send_card(_build_end_card(trip), **_send_kwargs)
         _archive(trip)
 
 
