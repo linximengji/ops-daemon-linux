@@ -286,8 +286,10 @@ async def main():
             # Inject twin bot credentials so gap_detector pushes via twin bot
             twin_env = os.environ.copy()
             twin_env["FEISHU_APP_ID"] = os.environ.get("TWIN_FEISHU_APP_ID", os.environ.get("FEISHU_APP_ID", ""))
-            twin_env["FEISHU_APP_SECRET"] = os.environ.get("TWIN_FEISHU_APP_SECRET", os.environ.get("FEISHU_APP_SECRET", ""))
-            twin_env["FEISHU_RECEIVE_ID"] = os.environ.get("TWIN_FEISHU_RECEIVE_ID", os.environ.get("FEISHU_RECEIVE_ID", ""))
+            twin_env["FEISHU_APP_SECRET"] = os.environ.get(
+                "TWIN_FEISHU_APP_SECRET", os.environ.get("FEISHU_APP_SECRET", ""))
+            twin_env["FEISHU_RECEIVE_ID"] = os.environ.get(
+                "TWIN_FEISHU_RECEIVE_ID", os.environ.get("FEISHU_RECEIVE_ID", ""))
             result = subprocess.run(
                 ["python3", "-c",
                  "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"

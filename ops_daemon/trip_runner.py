@@ -25,7 +25,9 @@ DATA_DIR = Path(__file__).parent.parent / "data" / "trips"
 # Trip bot credentials (TRIP_FEISHU_* take priority, fall back to generic FEISHU_*)
 FEISHU_APP_ID = os.environ.get("TRIP_FEISHU_APP_ID") or os.environ.get("FEISHU_APP_ID")
 FEISHU_APP_SECRET = os.environ.get("TRIP_FEISHU_APP_SECRET") or os.environ.get("FEISHU_APP_SECRET")
-RECEIVE_ID = os.environ.get("TRIP_FEISHU_RECEIVE_ID") or os.environ.get("FEISHU_RECEIVE_ID", "ou_6a6b52dc63d4051834ae522a3a6e7775")
+RECEIVE_ID = (
+    os.environ.get("TRIP_FEISHU_RECEIVE_ID")
+    or os.environ.get("FEISHU_RECEIVE_ID", "ou_6a6b52dc63d4051834ae522a3a6e7775"))
 
 _tz = timezone(datetime.now().astimezone().utcoffset())
 _executor = ThreadPoolExecutor(max_workers=2)
