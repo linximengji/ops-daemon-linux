@@ -310,6 +310,33 @@ async def main():
     if tcfg.get("twin_gap_push", {}).get("enabled", False):
         scheduler.add_task("twin_gap_push", tcfg["twin_gap_push"]["schedule"], run_twin_gap_push)
 
+    _refine_count = 0
+
+    def run_twin_refine():
+        nonlocal _refine_count
+        _refine_count += 1
+        print(f"[scheduler] run_twin_refine called #{_refine_count}")
+        try:
+            result = subprocess.run(
+                ["python3", "-c",
+                 "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
+                 "from twin.refine import refine_persona\n"
+                 "import json\n"
+                 "print(json.dumps(refine_persona(days=1, limit=50), ensure_ascii=False))"],
+                capture_output=True, timeout=120,
+            )
+            ok = result.returncode == 0
+            print(f"[scheduler] run_twin_refine #{_refine_count} exit={result.returncode} ok={ok}")
+            if result.stdout:
+                print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()[:500]}")
+            if result.stderr:
+                print(f"[scheduler] stderr: {result.stderr.decode('utf-8', errors='replace')[:500]}")
+        except Exception as e:
+            print(f"[scheduler] run_twin_refine exception: {e}")
+
+    if tcfg.get("twin_refine", {}).get("enabled", False):
+        scheduler.add_task("twin_refine", tcfg["twin_refine"]["schedule"], run_twin_refine)
+
     scheduler.start()
     store.append_episodic({"type": "daemon_start", "message": f"{dc['name']} started"})
     if _HAS_SD:

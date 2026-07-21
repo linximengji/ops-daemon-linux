@@ -98,6 +98,9 @@ tasks:
     enabled: true
     schedule: 2 8 * * *
     miniflux: true           # use Miniflux as RSS source instead of direct fetch
+  twin_refine:
+    enabled: true
+    schedule: 0 1 * * *
   twin_gap_push:
     enabled: true
     schedule: 0 10,14,20 * * *
