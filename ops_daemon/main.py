@@ -295,7 +295,7 @@ async def main():
                  "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
                  "from twin.gap_detector import detect_and_push_gaps\n"
                  "import json\n"
-                 "print(json.dumps(detect_and_push_gaps(max_count=3), ensure_ascii=False))"],
+                 "print(json.dumps(detect_and_push_gaps(max_count=2), ensure_ascii=False))"],
                 capture_output=True, timeout=120, env=twin_env,
             )
             ok = result.returncode == 0

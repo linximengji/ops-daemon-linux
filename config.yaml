@@ -93,7 +93,7 @@ tasks:
       tool_audit:
         dow: '1'
       twin_health_deep:
-        dow: '2'
+        interval_days: 4
   semi_report:
     enabled: true
     schedule: 2 8 * * *
@@ -103,6 +103,6 @@ tasks:
     schedule: 0 1 * * *
   twin_gap_push:
     enabled: true
-    schedule: 0 10,14,20 * * *
+    schedule: 0 9,11,14,16,20 * * *
 alerts:
   cooldown_seconds: 1800
