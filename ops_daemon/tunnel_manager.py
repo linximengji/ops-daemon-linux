@@ -91,14 +91,22 @@ def _start_service(svc_name: str, svc: dict) -> bool:
             popen_kwargs["cwd"] = svc["workdir"]
         log_path = svc.get("log_file")
         err_path = svc.get("err_file")
+        opened = []
         if log_path:
             Path(log_path).parent.mkdir(parents=True, exist_ok=True)
             popen_kwargs["stdout"] = open(log_path, "a", encoding="utf-8")
+            opened.append(popen_kwargs["stdout"])
             popen_kwargs["stderr"] = (
                 subprocess.STDOUT if not err_path
                 else open(err_path, "a", encoding="utf-8")
             )
-        subprocess.Popen(cmd, **popen_kwargs)
+            if popen_kwargs["stderr"] is not subprocess.STDOUT:
+                opened.append(popen_kwargs["stderr"])
+        try:
+            subprocess.Popen(cmd, **popen_kwargs)
+        finally:
+            for fh in opened:
+                fh.close()
         health = svc.get("health", {})
         if health.get("type") == "http":
             port = svc["port"]
@@ -158,7 +166,6 @@ def start() -> dict:
         except Exception:
             pass
         pid_file.unlink(missing_ok=True)
-    subprocess.run(["pkill", "-f", "cloudflared"], capture_output=True, timeout=5)
     time.sleep(2)
 
     # 2. 启动 cloudflared
@@ -219,7 +226,6 @@ def stop() -> dict:
         except Exception as e:
             _LOG.warning("stop tunnel (PID file) exception: %s", e)
         pid_file.unlink(missing_ok=True)
-    subprocess.run(["pkill", "-f", "cloudflared"], capture_output=True, timeout=5)
     time.sleep(2)
 
     # 2. 再停所有 services
@@ -284,7 +290,14 @@ def status() -> dict:
                 continue
             svc_status[svc_name] = "running" if port in listening_ports else "stopped"
 
-    state = {"status": "running", "services": svc_status}
+    states = list(svc_status.values())
+    if states and all(s == "stopped" for s in states):
+        top = "stopped"
+    elif all(s == "running" for s in states):
+        top = "running"
+    else:
+        top = "partial"
+    state = {"status": top, "services": svc_status}
     if STATE_FILE.exists():
         try:
             saved = json.loads(STATE_FILE.read_text(encoding="utf-8"))

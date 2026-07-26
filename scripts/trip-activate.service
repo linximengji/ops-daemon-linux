@@ -1,0 +1,9 @@
+[Unit]
+Description=Trip activator: start pending trips whose start time has arrived
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/ubuntu/.claude/.env
+Environment=TZ=Asia/Shanghai
+ExecStart=/usr/bin/python3 -m ops_daemon.trip_activate
+WorkingDirectory=/home/ubuntu/projects/ops-daemon

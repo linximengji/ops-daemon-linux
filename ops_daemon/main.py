@@ -91,15 +91,6 @@ async def main():
 
     store = StateStore(str(data_dir))
 
-    # Rotate stdout/stderr on each start so they don't grow unbounded
-    _log_dir = root / "data"
-    for lname in ("daemon_stdout.log", "daemon_stderr.log"):
-        lp = _log_dir / lname
-        if lp.exists() and lp.stat().st_size > 5 * 1024 * 1024:
-            rotated = _log_dir / f"{lname}.old"
-            rotated.unlink(missing_ok=True)
-            lp.rename(rotated)
-
     store.cleanup_episodic(keep_days=30)
 
     if not store.load_working():
@@ -152,6 +143,7 @@ async def main():
     # ── on_check_complete: build unified output ──
     _prev_checks: dict = {}
     _stopped_count: dict = {}
+    _last_up_pid: dict = {}
     # Persist report_status to disk so daemon restart doesn't lose it
     _report_status_path = root / "data" / "working" / "_report_status.json"
 
@@ -175,7 +167,7 @@ async def main():
 
     @daemon.on_check_complete
     async def on_checks(checks: dict):
-        nonlocal _prev_checks, _stopped_count
+        nonlocal _prev_checks, _stopped_count, _last_up_pid
         if _HAS_SD:
             sd.notify("WATCHDOG=1")
 
@@ -191,17 +183,17 @@ async def main():
             prev = _prev_checks.get(name, {})
             if isinstance(cur, dict) and isinstance(prev, dict):
                 cur_status = cur.get('status')
-                prev_status = prev.get('status')
                 if cur_status == 'stopped':
                     c = _stopped_count.get(name, 0) + 1
                     _stopped_count[name] = c
-                    if c >= 2 and prev_status == 'up':
+                    if c == 2:
                         await notify('WARN', f'{name} 已停止',
                                      f'服务 {name} 从运行状态变为停止。\n'
-                                     f'PID: {prev.get("pid", "?")} → 已退出\n'
+                                     f'PID: {_last_up_pid.get(name, "?")} → 已退出\n'
                                      f'请及时检查 systemd 状态')
                 else:
                     _stopped_count[name] = 0
+                    _last_up_pid[name] = cur.get('pid', '?')
 
         _prev_checks = dict(checks)
 
@@ -374,12 +366,21 @@ async def main():
 
 
 if __name__ == "__main__":
-    _err_log = Path(__file__).parent.parent / "data" / "daemon_stderr.log"
+    # Rotate logs before opening the fds — renaming after open leaves writes
+    # going to the stale inode on Linux
+    _log_dir = Path(__file__).parent.parent / "data"
+    for _lname in ("daemon_stdout.log", "daemon_stderr.log"):
+        _lp = _log_dir / _lname
+        if _lp.exists() and _lp.stat().st_size > 5 * 1024 * 1024:
+            _rotated = _log_dir / f"{_lname}.old"
+            _rotated.unlink(missing_ok=True)
+            _lp.rename(_rotated)
+    _err_log = _log_dir / "daemon_stderr.log"
     try:
         sys.stderr = open(_err_log, "a", encoding="utf-8", buffering=1)
     except Exception:
         pass
-    _out_log = Path(__file__).parent.parent / "data" / "daemon_stdout.log"
+    _out_log = _log_dir / "daemon_stdout.log"
     try:
         sys.stdout = open(_out_log, "a", encoding="utf-8", buffering=1)
     except Exception:

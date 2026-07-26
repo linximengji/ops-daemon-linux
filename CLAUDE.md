@@ -45,9 +45,9 @@ kill -9 $(cat data/daemon.pid)
 
 **核心原则：只监视，不维护。** Daemon 不做 PID 锁、不做进程管理、不做自动修复、不做 restart_watcher。所有子进程 (claudetalk, feishu-bridge, proxy) 由 systemd 或 spawn 脚本管理生命周期。
 
-### 飞书远程控制
+### 飞书远程控制（feishu-bridge 指令表）
 
-feishu-bridge（9878 端口）独立进程处理飞书消息的快捷指令。支持以下手机端操作：
+feishu-bridge（9878 端口）是独立于 daemon 的进程，消费飞书消息、匹配快捷指令文本。此表是 feishu-bridge 的功能矩阵，不是 MCP tool 清单——这些指令不经过 LLM，由 bridge 直接做文本匹配和动作执行。daemon 只监视 bridge 的端口存活，不参与消息处理。
 
 | 飞书消息 | 功能 |
 |---------|------|
@@ -91,7 +91,21 @@ All under `data/`:
 
 ### MCP server (`mcp_server.py`)
 
-Standalone FastMCP server that reads from the same `data/` directory. Exposes `status()` (latest.json) and `recent_events(hours)` (episodic log).
+Standalone FastMCP server (独立进程，非 daemon 主循环) sharing the same `data/` directory. Exposes read-only observation tools (`status`, `recent_events`, `diagnose`) + on-demand task management tools (`list_tasks`, `add_task`, `remove_task`, phone task CRUD). 详见 [[mcp-server-tools]]。
+
+### Trip 子系统（激活职责已剥离 daemon，2026-07-26）
+
+trip 是独立于监控主循环的业务子系统。**激活不在 daemon 内**：
+
+```
+创建:  trip_mgr create  →  data/trips/{id}.json (status=pending, created_at=激活时间)
+激活:  trip-activate.timer (systemd --user, 每分钟) → trip_activate.py 扫 trips/
+         → 到期 pending → systemctl --user start trip@{id} → 写 status=active
+执行:  trip@{id}.service (用户级 unit) → trip_runner.py {id} → 监控 schedule 节点发飞书卡片
+观测:  daemon check_trip_scanner 只读 (pending/active/overdue_pending 计数)，不启动进程
+```
+
+安装 timer: `scripts/setup-trip-timer.sh`。trip 设计为常驻服务后台使用，依赖用户会话可用。详见记忆段 `trip-activation-decoupled`。
 
 ### agent-core dependency
 

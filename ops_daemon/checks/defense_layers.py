@@ -116,8 +116,57 @@ async def _check_l2_jaeger(cfg: dict) -> dict:
     return result
 
 
+async def _git_status_porcelain(path: str) -> int:
+    try:
+        r = await asyncio.create_subprocess_exec(
+            "git", "-C", path, "status", "--porcelain",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, _ = await asyncio.wait_for(r.communicate(), timeout=5)
+        return len([line for line in out.decode("utf-8", errors="replace").splitlines() if line.strip()])
+    except (subprocess.TimeoutExpired, asyncio.TimeoutError):
+        return -1
+
+
+async def _git_unpushed(path: str) -> int:
+    try:
+        r = await asyncio.create_subprocess_exec(
+            "git", "-C", path, "log", "@{u}..", "--oneline",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, err = await asyncio.wait_for(r.communicate(), timeout=5)
+        err_str = err.decode("utf-8", errors="replace").strip()
+        if "no upstream" in err_str.lower() or r.returncode != 0:
+            return 0
+        return len([line for line in out.decode("utf-8", errors="replace").splitlines() if line.strip()])
+    except (subprocess.TimeoutExpired, asyncio.TimeoutError):
+        return -1
+
+
+async def _git_last_commit(path: str) -> str:
+    try:
+        r = await asyncio.create_subprocess_exec(
+            "git", "-C", path, "log", "-1", "--format=%ci",
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, _ = await asyncio.wait_for(r.communicate(), timeout=5)
+        return out.decode("utf-8", errors="replace").strip()[:10]
+    except (subprocess.TimeoutExpired, asyncio.TimeoutError):
+        return "?"
+
+
+async def _check_l3_project(entry: str, proj_path: str) -> dict:
+    uncommitted, unpushed, last_commit = await asyncio.gather(
+        _git_status_porcelain(proj_path),
+        _git_unpushed(proj_path),
+        _git_last_commit(proj_path),
+    )
+    return {
+        "name": entry,
+        "uncommitted": uncommitted,
+        "unpushed": unpushed,
+        "last_commit": last_commit,
+    }
+
+
 async def _check_l3_git(cfg: dict) -> dict:
-    projects: list[dict] = []
     root = cfg.get("projects_root", PROJECTS_ROOT)
     exclude = set(cfg.get("exclude_projects", EXCLUDE_PROJECTS))
     proj_root = Path(root)
@@ -125,73 +174,17 @@ async def _check_l3_git(cfg: dict) -> dict:
     if not proj_root.exists():
         return {"status": "down", "projects": [], "error": f"{root} not found"}
 
-    for entry in sorted(os.listdir(proj_root)):
-        if entry in exclude:
-            continue
-        git_dir = proj_root / entry / ".git"
-        if not git_dir.exists():
-            continue
-        proj_path = str(proj_root / entry)
-
-        # Uncommitted files
-        uncommitted = 0
-        if await _git_has_changes(proj_path):
-            try:
-                r = await asyncio.create_subprocess_exec(
-                    "git", "-C", proj_path, "status", "--porcelain",
-                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-                out, _ = await asyncio.wait_for(r.communicate(), timeout=5)
-                uncommitted = len([line for line in out.decode("utf-8", errors="replace").splitlines() if line.strip()])
-            except (subprocess.TimeoutExpired, asyncio.TimeoutError):
-                uncommitted = -1
-
-        # Unpushed commits
-        unpushed = -1
-        try:
-            r = await asyncio.create_subprocess_exec(
-                "git", "-C", proj_path, "log", "@{u}..", "--oneline",
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, err = await asyncio.wait_for(r.communicate(), timeout=5)
-            err_str = err.decode("utf-8", errors="replace").strip()
-            if "no upstream" in err_str.lower() or r.returncode != 0:
-                unpushed = 0
-            else:
-                unpushed = len([line for line in out.decode("utf-8", errors="replace").splitlines() if line.strip()])
-        except (subprocess.TimeoutExpired, asyncio.TimeoutError):
-            unpushed = -1
-
-        # Last commit date
-        last_commit = "?"
-        try:
-            r = await asyncio.create_subprocess_exec(
-                "git", "-C", proj_path, "log", "-1", "--format=%ci",
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            out, _ = await asyncio.wait_for(r.communicate(), timeout=5)
-            last_commit = out.decode("utf-8", errors="replace").strip()[:10]
-        except (subprocess.TimeoutExpired, asyncio.TimeoutError):
-            pass
-
-        projects.append({
-            "name": entry,
-            "uncommitted": uncommitted,
-            "unpushed": unpushed,
-            "last_commit": last_commit,
-        })
+    git_projects = [
+        (entry, str(proj_root / entry))
+        for entry in sorted(os.listdir(proj_root))
+        if entry not in exclude and (proj_root / entry / ".git").exists()
+    ]
+    projects = await asyncio.gather(
+        *(_check_l3_project(entry, path) for entry, path in git_projects))
 
     dirty = [p for p in projects if p["uncommitted"] > 0 or p["unpushed"] > 0]
     status = "warn" if dirty else "ok"
     return {"status": status, "projects": projects}
-
-
-async def _git_has_changes(path: str) -> bool:
-    try:
-        r = await asyncio.create_subprocess_exec(
-            "git", "-C", path, "status", "--porcelain",
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, _ = await asyncio.wait_for(r.communicate(), timeout=3)
-        return any(line.strip() for line in out.decode("utf-8", errors="replace").splitlines())
-    except (subprocess.TimeoutExpired, asyncio.TimeoutError):
-        return False
 
 
 async def check_defense_layers(cfg: dict) -> dict:

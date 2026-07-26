@@ -1,11 +1,14 @@
 """Proxy health check — probes main (4000) and backup (4002) ports + HTTP layer."""
-import socket
+import asyncio
 import time
 
 from ._probe import http_probe, get_pid_by_port, get_process_uptime
 
+_last_main_status = None
+
 
 async def check_proxy(cfg: dict, store, baseline) -> dict:
+    global _last_main_status
     host = cfg.get("host", "127.0.0.1")
     ports = cfg.get("ports", [4000, 4002])
     main_port = ports[0]
@@ -15,8 +18,10 @@ async def check_proxy(cfg: dict, store, baseline) -> dict:
     for port in ports:
         start = time.time()
         try:
-            s = socket.create_connection((host, port), timeout=timeout)
-            s.close()
+            _, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=timeout)
+            writer.close()
+            await writer.wait_closed()
             latency = (time.time() - start) * 1000
             baseline.record(f"proxy_latency_ms_{port}", round(latency, 1))
 
@@ -36,7 +41,7 @@ async def check_proxy(cfg: dict, store, baseline) -> dict:
                 port_info["status"] = "degraded"
                 port_info["error"] = f"port {port} open but HTTP /v1/models not responding"
             results["ports"][port] = port_info
-        except (TimeoutError, ConnectionRefusedError, OSError) as e:
+        except (asyncio.TimeoutError, TimeoutError, ConnectionRefusedError, OSError) as e:
             results["ports"][port] = {"status": "down", "error": str(e)}
 
     main = results["ports"].get(main_port, {})
@@ -52,11 +57,13 @@ async def check_proxy(cfg: dict, store, baseline) -> dict:
     else:
         results["status"] = "down"
 
-    if main.get("status") == "down" or main.get("status") == "degraded":
+    main_status = main.get("status")
+    if main_status in ("down", "degraded") and _last_main_status not in ("down", "degraded"):
         store.append_episodic({
             "type": "proxy_down",
             "port": main_port,
             "error": main.get("error", "unknown"),
             "backup_status": results["ports"].get(ports[1], {}).get("status"),
         })
+    _last_main_status = main_status
     return results

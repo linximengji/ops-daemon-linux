@@ -27,9 +27,26 @@ FEISHU_APP_ID = os.environ.get("TRIP_FEISHU_APP_ID") or os.environ.get("FEISHU_A
 FEISHU_APP_SECRET = os.environ.get("TRIP_FEISHU_APP_SECRET") or os.environ.get("FEISHU_APP_SECRET")
 RECEIVE_ID = (
     os.environ.get("TRIP_FEISHU_RECEIVE_ID")
-    or os.environ.get("FEISHU_RECEIVE_ID", "ou_6a6b52dc63d4051834ae522a3a6e7775"))
+    or os.environ.get("FEISHU_RECEIVE_ID", ""))
 
-_tz = timezone(datetime.now().astimezone().utcoffset())
+# import 时固定 utcoffset 会跨 DST 偏移 1h，改用动态本地时区
+def _local_tz():
+    try:
+        from zoneinfo import ZoneInfo
+        import os as _os
+        name = _os.environ.get("TZ")
+        if not name:
+            lt = Path("/etc/localtime")
+            if lt.is_symlink():
+                parts = str(lt.resolve()).split("zoneinfo/")
+                if len(parts) > 1:
+                    name = parts[1]
+        return ZoneInfo(name) if name else timezone(datetime.now().astimezone().utcoffset())
+    except Exception:
+        return timezone(datetime.now().astimezone().utcoffset())
+
+
+_tz = _local_tz()
 _executor = ThreadPoolExecutor(max_workers=2)
 _last_weather_check = 0
 WEATHER_CHECK_INTERVAL = 300  # 5 minutes

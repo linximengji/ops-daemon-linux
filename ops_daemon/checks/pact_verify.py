@@ -14,7 +14,8 @@ _cache = {"data": None, "ts": 0}
 async def check_pact_verify(cfg: dict, store=None) -> dict:
     now = __import__("time").time()
 
-    if cfg.get("min_interval", _CACHE_TTL) > 0 and now - _cache["ts"] < cfg["min_interval"]:
+    min_interval = cfg.get("min_interval", _CACHE_TTL)
+    if min_interval > 0 and now - _cache["ts"] < min_interval:
         return _cache["data"] or {"status": "cached"}
 
     try:

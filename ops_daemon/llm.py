@@ -3,14 +3,12 @@ import os
 import json
 import httpx
 
-API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
-API_URL = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com") + "/v1/chat/completions"
-
-
 async def diagnose(event_type: str, context: dict, recent_events: list[dict]) -> str:
     """Analyze anomaly with LLM and return diagnosis text."""
-    if not API_KEY:
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "")
+    if not api_key:
         return "LLM diagnosis unavailable: DEEPSEEK_API_KEY not set"
+    api_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com") + "/v1/chat/completions"
 
     events_text = "\n".join(
         f"  [{e.get('ts','?')}] {e.get('type','?')}: {json.dumps({k:v for k,v in e.items() if k not in ('ts',)})}"
@@ -28,7 +26,7 @@ async def diagnose(event_type: str, context: dict, recent_events: list[dict]) ->
 {events_text}
 """
 
-    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "model": "deepseek-v4-flash",
         "messages": [{"role": "user", "content": prompt}],
@@ -38,7 +36,7 @@ async def diagnose(event_type: str, context: dict, recent_events: list[dict]) ->
 
     try:
         async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.post(API_URL, json=payload, headers=headers)
+            r = await c.post(api_url, json=payload, headers=headers)
             r.raise_for_status()
             text = r.json()["choices"][0]["message"]["content"]
             return text.strip()

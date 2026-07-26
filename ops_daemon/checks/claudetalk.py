@@ -1,11 +1,14 @@
 """claudetalk / feishu-bridge / MCP server health checks.
 Uses process name matching so it works without systemd."""
+import asyncio
 import time
 import psutil
 
 CLAUDETALK_PROC_NAME = "claudetalk-default"
 FEISHU_BRIDGE_PROC_NAME = "feishu-bridge"
 MCP_SERVER_PROC_NAME = "claudetalk-mcp"
+
+_last_status: dict[str, str] = {}
 
 
 def _find_pid_by_name(name: str) -> int | None:
@@ -33,15 +36,17 @@ def _process_info(name: str) -> dict:
 
 async def check_claudetalk(cfg: dict, store=None) -> dict:
     result = _process_info(CLAUDETALK_PROC_NAME)
-    if result["status"] == "stopped" and store:
+    if store and result["status"] == "stopped" and _last_status.get(CLAUDETALK_PROC_NAME) != "stopped":
         store.append_episodic({"type": "claudetalk_stopped"})
+    _last_status[CLAUDETALK_PROC_NAME] = result["status"]
     return result
 
 
 async def check_feishu_bridge(cfg: dict, store=None) -> dict:
     result = _process_info(FEISHU_BRIDGE_PROC_NAME)
-    if result["status"] == "stopped" and store:
+    if store and result["status"] == "stopped" and _last_status.get(FEISHU_BRIDGE_PROC_NAME) != "stopped":
         store.append_episodic({"type": "feishu_bridge_stopped"})
+    _last_status[FEISHU_BRIDGE_PROC_NAME] = result["status"]
     return result
 
 
@@ -52,13 +57,14 @@ async def check_mcp_server(cfg: dict, store=None) -> dict:
         return by_name
 
     # 回退到端口检查
-    import socket
     port = cfg.get("port", 9877)
     host = cfg.get("host", "127.0.0.1")
     timeout = cfg.get("timeout_seconds", 5)
     try:
-        s = socket.create_connection((host, port), timeout=timeout)
-        s.close()
-    except (TimeoutError, ConnectionRefusedError, OSError):
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port), timeout=timeout)
+        writer.close()
+        await writer.wait_closed()
+    except (asyncio.TimeoutError, TimeoutError, ConnectionRefusedError, OSError):
         return {"status": "stopped", "error": "port %d not open" % port}
     return {"status": "up"}

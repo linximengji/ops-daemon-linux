@@ -4,10 +4,6 @@ import os
 import sys
 import httpx
 
-FEISHU_APP_ID = os.environ.get("FEISHU_APP_ID")
-FEISHU_APP_SECRET = os.environ.get("FEISHU_APP_SECRET")
-RECEIVE_ID = os.environ.get("FEISHU_RECEIVE_ID", "ou_6a6b52dc63d4051834ae522a3a6e7775")
-
 TENANT_TOKEN: str | None = None
 
 
@@ -15,12 +11,14 @@ async def _get_tenant_token() -> str | None:
     global TENANT_TOKEN
     if TENANT_TOKEN:
         return TENANT_TOKEN
-    if not FEISHU_APP_ID or not FEISHU_APP_SECRET:
+    app_id = os.environ.get("FEISHU_APP_ID")
+    app_secret = os.environ.get("FEISHU_APP_SECRET")
+    if not app_id or not app_secret:
         return None
     try:
         async with httpx.AsyncClient(timeout=5) as c:
             r = await c.post("https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal", json={
-                "app_id": FEISHU_APP_ID, "app_secret": FEISHU_APP_SECRET,
+                "app_id": app_id, "app_secret": app_secret,
             })
             TENANT_TOKEN = r.json().get("tenant_access_token")
             return TENANT_TOKEN
@@ -33,7 +31,9 @@ async def notify_feishu(severity: str, title: str, message: str, receive_id: str
     token = await _get_tenant_token()
     if not token:
         return False
-    target = receive_id or RECEIVE_ID
+    target = receive_id or os.environ.get("FEISHU_RECEIVE_ID", "")
+    if not target:
+        return False
     color_map = {"INFO": "blue", "WARN": "orange", "CRITICAL": "red"}
     try:
         async with httpx.AsyncClient(timeout=10) as c:

@@ -1,21 +1,25 @@
-"""Trip scanner — auto-activate pending trips when their start time arrives.
+"""Trip scanner — read-only observation of trip state.
 
-Scans data/trips/*.json across all known project directories. For pending
-trips whose start time has passed: marks them active and starts trip@.service
-via systemd.
+Read-only check: counts pending / active / overdue trips and surfaces them for
+the dashboard and MCP. Activation (pending -> active via systemd) is owned by
+the user-level trip-activate.timer, NOT the daemon — the daemon only observes.
 
-Scans two locations:
+Scans two locations (ops-daemon dir takes priority on id conflict):
   - ops-daemon/data/trips/   (trip_runner's directory)
   - claudetalk/data/trips/   (trip.md agent writes here)
 """
+import asyncio
 import json
 import os
-import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
-_tz = timezone(datetime.now().astimezone().utcoffset())
+try:
+    _tz = ZoneInfo(os.environ.get("TZ") or Path("/etc/timezone").read_text(encoding="utf-8").strip())
+except Exception:
+    _tz = ZoneInfo("Asia/Shanghai")
 
 _DAEMON_DIR = Path(__file__).resolve().parent.parent.parent  # ops-daemon/
 _TRIP_DIRS = [
@@ -23,79 +27,54 @@ _TRIP_DIRS = [
     _DAEMON_DIR.parent / "claudetalk" / "data" / "trips",
 ]
 
-# daemon runs as system service without user session env; these are needed
-# for systemctl --user to reach the user's systemd instance
-_USER_SYSTEMD_ENV = {
-    "XDG_RUNTIME_DIR": "/run/user/1000",
-    "DBUS_SESSION_BUS_ADDRESS": "unix:path=/run/user/1000/bus",
-}
-
 
 def _parse_time(ts: str) -> datetime:
     return datetime.fromisoformat(ts).replace(tzinfo=_tz)
 
 
 async def check_trip_scanner(cfg: dict, store=None) -> dict:
-    """Check for pending trips that should be activated."""
-    # Collect all trip files across all dirs (ops-daemon dir takes priority on id conflict)
+    """Observe trip state: count pending/active and flag overdue pending trips."""
     seen_ids: set[str] = set()
     trip_files: list[Path] = []
     for d in _TRIP_DIRS:
         if d.exists():
             for p in sorted(d.glob("*.json")):
-                tid = p.stem
-                if tid not in seen_ids:
-                    seen_ids.add(tid)
+                if p.stem not in seen_ids:
+                    seen_ids.add(p.stem)
                     trip_files.append(p)
+
     now = time.time()
-    activated = 0
     pending_count = 0
     active_count = 0
+    overdue: list[str] = []  # pending trips past their start time (awaiting activator)
     errors: list[str] = []
+    loop = asyncio.get_running_loop()
 
     for p in trip_files:
         try:
-            trip = json.loads(p.read_text(encoding="utf-8"))
-            status = trip.get("status", "")
-            trip_id = trip.get("trip_id", p.stem)
-
-            if status == "pending":
-                pending_count += 1
-                start_time_str = trip.get("started_at") or trip.get("created_at")
-                if not start_time_str:
-                    continue
-                start_time = _parse_time(start_time_str)
-                if start_time.timestamp() <= now:
-                    # Activate: mark status + start systemd unit
-                    trip["status"] = "active"
-                    p.write_text(json.dumps(trip, ensure_ascii=False, indent=2), encoding="utf-8")
-                    result = subprocess.run(
-                        ["systemctl", "--user", "start", f"trip@{trip_id}.service"],
-                        capture_output=True, text=True, timeout=10,
-                        env={**os.environ, **_USER_SYSTEMD_ENV},
-                    )
-                    if result.returncode == 0:
-                        activated += 1
-                        if store:
-                            store.append_episodic({
-                                "type": "trip_activated",
-                                "trip_id": trip_id,
-                                "title": trip.get("title", ""),
-                            })
-                    else:
-                        errors.append(f"trip@{trip_id}: {result.stderr.strip()}")
-            elif status == "active":
-                active_count += 1
-        except (json.JSONDecodeError, KeyError, OSError) as e:
+            trip = json.loads(await loop.run_in_executor(
+                None, lambda pp=p: pp.read_text(encoding="utf-8")))
+        except (json.JSONDecodeError, OSError) as e:
             errors.append(f"{p.name}: {e}")
+            continue
+
+        status = trip.get("status", "")
+        trip_id = trip.get("trip_id", p.stem)
+        if status == "pending":
+            pending_count += 1
+            start = trip.get("created_at")
+            if start and _parse_time(start).timestamp() <= now:
+                overdue.append(trip_id)
+        elif status == "active":
+            active_count += 1
 
     result = {
         "status": "ok",
         "pending": pending_count,
         "active": active_count,
-        "activated": activated,
+        "overdue_pending": overdue,
     }
     if errors:
         result["errors"] = errors
-        result["status"] = "degraded" if activated > 0 else "error"
+        result["status"] = "degraded"
     return result

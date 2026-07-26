@@ -17,9 +17,6 @@ DEFAULT_PATHS = [
     str(_HOME / ".claude" / "hooks" / "post_failure_recorder.py"),
     str(_HOME / ".claude" / "hooks" / "audit_logger.py"),
     str(_HOME / ".claude" / "settings.json"),
-    str(_PROJECTS / "ops-daemon" / "ops_daemon" / "process_manager.py"),
-    str(_PROJECTS / "ops-daemon" / "ops_daemon" / "repair.py"),
-    str(_PROJECTS / "ops-daemon" / "ops_daemon" / "state_machine.py"),
 ]
 
 

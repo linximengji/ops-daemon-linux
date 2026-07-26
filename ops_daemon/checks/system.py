@@ -1,11 +1,16 @@
 import psutil
 
+_last_disk_state: dict[str, str] = {}
+_last_cpu_state = None
+_last_mem_state = None
+
 
 def _disk_key(mountpoint: str) -> str:
     return mountpoint.replace(":", "").replace("\\", "")
 
 
 async def check_system(cfg: dict, store, baseline) -> dict:
+    global _last_cpu_state, _last_mem_state
     disk_warn = cfg.get("disk_warn_pct", 85)
     disk_critical = cfg.get("disk_critical_pct", 90)
     cpu_warn = cfg.get("cpu_warn_pct", 80)
@@ -26,13 +31,16 @@ async def check_system(cfg: dict, store, baseline) -> dict:
                 "pct": pct, "free_gb": round(usage.free / 2 ** 30, 1)
             }
             if pct >= disk_critical:
-                store.append_episodic({
-                    "type": "disk_critical", "mount": part.mountpoint, "pct": pct
-                })
+                disk_state = "disk_critical"
             elif pct >= disk_warn:
+                disk_state = "disk_warn"
+            else:
+                disk_state = "ok"
+            if disk_state != "ok" and _last_disk_state.get(part.mountpoint) != disk_state:
                 store.append_episodic({
-                    "type": "disk_warn", "mount": part.mountpoint, "pct": pct
+                    "type": disk_state, "mount": part.mountpoint, "pct": pct
                 })
+            _last_disk_state[part.mountpoint] = disk_state
             metric = f"disk_{_disk_key(part.mountpoint)}"
             try:
                 baseline.record(metric, pct)
@@ -44,16 +52,20 @@ async def check_system(cfg: dict, store, baseline) -> dict:
     # cpu
     cpu = psutil.cpu_percent(interval=1)
     result["cpu"] = {"pct": cpu}
-    if cpu >= cpu_warn:
+    cpu_state = "cpu_high" if cpu >= cpu_warn else "ok"
+    if cpu_state != "ok" and _last_cpu_state != cpu_state:
         store.append_episodic({"type": "cpu_high", "pct": cpu})
+    _last_cpu_state = cpu_state
     baseline.record("cpu", cpu)
 
     # memory
     mem = psutil.virtual_memory()
     mem_pct = mem.percent
     result["memory"] = {"pct": mem_pct, "available_gb": round(mem.available / 2 ** 30, 1)}
-    if mem_pct >= mem_warn:
+    mem_state = "memory_high" if mem_pct >= mem_warn else "ok"
+    if mem_state != "ok" and _last_mem_state != mem_state:
         store.append_episodic({"type": "memory_high", "pct": mem_pct})
+    _last_mem_state = mem_state
     baseline.record("memory", mem_pct)
 
     # boot uptime
