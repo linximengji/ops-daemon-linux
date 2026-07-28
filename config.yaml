@@ -104,5 +104,8 @@ tasks:
   twin_gap_push:
     enabled: true
     schedule: 0 9,11,14,16,20 * * *
+  tokenplan_fetch:
+    enabled: true
+    schedule: 17 */6 * * *
 alerts:
   cooldown_seconds: 1800

@@ -329,6 +329,29 @@ async def main():
     if tcfg.get("twin_refine", {}).get("enabled", False):
         scheduler.add_task("twin_refine", tcfg["twin_refine"]["schedule"], run_twin_refine)
 
+    # TokenPlan credits 抓取
+    _tokenplan_count = 0
+    def run_tokenplan_fetch():
+        nonlocal _tokenplan_count
+        _tokenplan_count += 1
+        print(f"[scheduler] run_tokenplan_fetch #{_tokenplan_count}")
+        _tf_env = {**os.environ}
+        _tf_env["POLICY_PATH"] = "/home/ubuntu/projects/.claudetalk/routing_policy.json"
+        result = subprocess.run(
+            ["bash", str(root.parent / "claudetalk/scripts/tokenplan_fetch.sh")],
+            capture_output=True, timeout=120, env=_tf_env,
+        )
+        ok = result.returncode == 0
+        print(f"[scheduler] run_tokenplan_fetch #{_tokenplan_count} exit={result.returncode}")
+        if result.stdout:
+            print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()}")
+        if result.stderr:
+            sdout = result.stderr.decode('utf-8', errors='replace').strip()
+            if sdout:
+                print(f"[scheduler] stderr: {sdout[:500]}")
+    if tcfg.get("tokenplan_fetch", {}).get("enabled", False):
+        scheduler.add_task("tokenplan_fetch", tcfg["tokenplan_fetch"]["schedule"], run_tokenplan_fetch)
+
     scheduler.start()
     store.append_episodic({"type": "daemon_start", "message": f"{dc['name']} started"})
     if _HAS_SD:
