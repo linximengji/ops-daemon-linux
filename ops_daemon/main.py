@@ -2,6 +2,7 @@
 # ruff: noqa: E402 — agent-core path insertion must happen before those imports
 import asyncio
 import json
+import signal
 import subprocess
 import sys
 import os
@@ -18,24 +19,11 @@ except ImportError:
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-# ── Single-instance lock ──
-_LOCK_PATH = Path(__file__).resolve().parent.parent / "data" / ".daemon.lock"
-try:
-    import fcntl
-    _lock_fd = os.open(str(_LOCK_PATH), os.O_CREAT | os.O_RDWR, 0o644)
-    try:
-        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        print(f"[main] Another instance is already running (lock held at {_LOCK_PATH}). Exiting.")
-        sys.exit(1)
-except ImportError:
-    pass  # Windows — no fcntl, skip lock
-
 import sys as _ag_sys
 _ag_path = str(Path(__file__).resolve().parent.parent.parent / "agent_core")
 if _ag_path not in _ag_sys.path:
     _ag_sys.path.insert(0, _ag_path)
-from agent_core import BaseDaemon, StateStore, BaselineEngine, AlertManager, Scheduler
+from agent_core import BaseDaemon, StateStore, BaselineEngine, Scheduler
 
 from ops_daemon.checks.proxy import check_proxy
 from ops_daemon.checks.cloudflared import check_cloudflared
@@ -97,8 +85,6 @@ async def main():
         store.update_working({"daemon": dc["name"], "status": "starting"})
 
     baseline = BaselineEngine(store)
-    # AlertManager is kept for future alert integration; remove if unused after refactor
-    _alerts = AlertManager(store, cooldown=cfg["alerts"].get("cooldown_seconds", 1800))
 
     daemon = BaseDaemon(dc["name"], dc, store, heartbeat_path=str(data_dir / "heartbeat"))
     lcfg = cfg.get("llm", {})
@@ -168,6 +154,10 @@ async def main():
     @daemon.on_check_complete
     async def on_checks(checks: dict):
         nonlocal _prev_checks, _stopped_count, _last_up_pid
+
+        # Runtime log rotation — check each cycle
+        _rotate_logs()
+
         if _HAS_SD:
             sd.notify("WATCHDOG=1")
 
@@ -272,36 +262,6 @@ async def main():
     if tcfg.get("semi_report", {}).get("enabled", True):
         scheduler.add_task("semi_report", tcfg["semi_report"]["schedule"], run_semi_report)
 
-    def run_twin_gap_push():
-        print("[scheduler] run_twin_gap_push called")
-        try:
-            # Inject twin bot credentials so gap_detector pushes via twin bot
-            twin_env = os.environ.copy()
-            twin_env["FEISHU_APP_ID"] = os.environ.get("TWIN_FEISHU_APP_ID", os.environ.get("FEISHU_APP_ID", ""))
-            twin_env["FEISHU_APP_SECRET"] = os.environ.get(
-                "TWIN_FEISHU_APP_SECRET", os.environ.get("FEISHU_APP_SECRET", ""))
-            twin_env["FEISHU_RECEIVE_ID"] = os.environ.get(
-                "TWIN_FEISHU_RECEIVE_ID", os.environ.get("FEISHU_RECEIVE_ID", ""))
-            result = subprocess.run(
-                ["python3", "-c",
-                 "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
-                 "from twin.gap_detector import detect_and_push_gaps\n"
-                 "import json\n"
-                 "print(json.dumps(detect_and_push_gaps(max_count=2), ensure_ascii=False))"],
-                capture_output=True, timeout=120, env=twin_env,
-            )
-            ok = result.returncode == 0
-            print(f"[scheduler] twin_gap_push exit={result.returncode} ok={ok}")
-            if result.stdout:
-                print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()}")
-            if result.stderr:
-                print(f"[scheduler] stderr: {result.stderr.decode('utf-8', errors='replace')[:500]}")
-        except Exception as e:
-            print(f"[scheduler] twin_gap_push exception: {e}")
-
-    if tcfg.get("twin_gap_push", {}).get("enabled", False):
-        scheduler.add_task("twin_gap_push", tcfg["twin_gap_push"]["schedule"], run_twin_gap_push)
-
     _refine_count = 0
 
     def run_twin_refine():
@@ -358,6 +318,10 @@ async def main():
         sd.notify("READY=1")
     await notify("INFO", f"{dc['name']} started", f"PID {os.getpid()}")
 
+    # SIGTERM handler — ensure graceful shutdown on systemctl stop
+    loop = asyncio.get_running_loop()
+    loop.add_signal_handler(signal.SIGTERM, lambda: asyncio.create_task(daemon.stop()))
+
     # crash-recovery detection
     _recent = store.load_episodic(days=1)
     _was_crash = any(e.get("type") == "daemon_crash" for e in _recent[-20:])
@@ -388,16 +352,30 @@ async def main():
             pass
 
 
-if __name__ == "__main__":
-    # Rotate logs before opening the fds — renaming after open leaves writes
-    # going to the stale inode on Linux
+def _rotate_logs():
     _log_dir = Path(__file__).parent.parent / "data"
-    for _lname in ("daemon_stdout.log", "daemon_stderr.log"):
+    _fd_map = {"daemon_stderr.log": sys.stderr, "daemon_stdout.log": sys.stdout}
+    for _lname, _stream in _fd_map.items():
         _lp = _log_dir / _lname
         if _lp.exists() and _lp.stat().st_size > 5 * 1024 * 1024:
             _rotated = _log_dir / f"{_lname}.old"
             _rotated.unlink(missing_ok=True)
             _lp.rename(_rotated)
+            try:
+                _new_fd = open(_lp, "a", encoding="utf-8", buffering=1)
+                if _stream is sys.stdout:
+                    sys.stdout = _new_fd
+                elif _stream is sys.stderr:
+                    sys.stderr = _new_fd
+            except Exception:
+                pass
+
+
+if __name__ == "__main__":
+    # Rotate logs before opening the fds — renaming after open leaves writes
+    # going to the stale inode on Linux
+    _rotate_logs()
+    _log_dir = Path(__file__).parent.parent / "data"
     _err_log = _log_dir / "daemon_stderr.log"
     try:
         sys.stderr = open(_err_log, "a", encoding="utf-8", buffering=1)

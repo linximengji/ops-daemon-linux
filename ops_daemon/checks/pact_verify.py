@@ -1,9 +1,9 @@
-"""pact_verify — ops-daemon check wrapper for Pact contract verification.
+"""pact_verify - ops-daemon check wrapper for Pact contract verification.
 
 Runs scripts/pact_verify.py --json, parses results.
 """
+import asyncio
 import json
-import subprocess
 from pathlib import Path
 
 _SCRIPT = str(Path(__file__).resolve().parent.parent.parent / "scripts" / "pact_verify.py")
@@ -19,11 +19,12 @@ async def check_pact_verify(cfg: dict, store=None) -> dict:
         return _cache["data"] or {"status": "cached"}
 
     try:
-        r = subprocess.run(
-            ["python3", _SCRIPT, "--json"],
-            capture_output=True, text=True, timeout=30,
+        proc = await asyncio.create_subprocess_exec(
+            "python3", _SCRIPT, "--json",
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
-        result = json.loads(r.stdout)
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=30)
+        result = json.loads(out.decode())
     except Exception as e:
         return {"status": "error", "error": str(e)}
 

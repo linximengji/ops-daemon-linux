@@ -1,11 +1,10 @@
-"""defense_layers — aggregate L1 (Pact Broker), L2 (Jaeger), L3 (Git diff) into
+"""defense_layers - aggregate L1 (Pact Broker), L2 (Jaeger), L3 (Git diff) into
 a single check result for the Pact page."""
 import asyncio
+import httpx
 import json
 import os
 import subprocess
-import urllib.request
-import urllib.error
 from pathlib import Path
 
 PACT_BROKER_URL = "http://localhost:9292"
@@ -25,14 +24,6 @@ async def _tcp_probe(host: str, port: int, timeout: int = 3) -> bool:
         return False
 
 
-def _http_get_json(url: str, timeout: int = 5):
-    try:
-        r = urllib.request.urlopen(url, timeout=timeout)
-        return json.loads(r.read())
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError, OSError):
-        return None
-
-
 async def _check_l1_pact(cfg: dict) -> dict:
     url = cfg.get("pact_broker_url", PACT_BROKER_URL)
     host = cfg.get("host", "127.0.0.1")
@@ -43,55 +34,63 @@ async def _check_l1_pact(cfg: dict) -> dict:
     if not await _tcp_probe(host, port, timeout):
         return result
 
-    pacts_data = _http_get_json(f"{url}/pacts/latest", timeout=timeout)
-    if not pacts_data:
-        result["status"] = "degraded"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(timeout)) as client:
+        try:
+            r = await asyncio.wait_for(client.get(f"{url}/pacts/latest"), timeout=timeout)
+            pacts_data = r.json()
+        except Exception:
+            result["status"] = "degraded"
+            return result
+
+        pacts = pacts_data.get("pacts", [])
+        contracts = []
+        for p in pacts:
+            emb = p.get("_embedded", {})
+            consumer = emb.get("consumer", {})
+            provider = emb.get("provider", {})
+            cname = consumer.get("name", "?")
+            pname = provider.get("name", "?")
+            version_emb = consumer.get("_embedded", {}).get("version", {})
+            ver_number = version_emb.get("number", "?")
+            verification = None
+            self_link = p.get("_links", {}).get("self")
+            if isinstance(self_link, list) and self_link:
+                detail_href = self_link[0].get("href")
+            else:
+                detail_href = None
+            if detail_href:
+                try:
+                    r2 = await asyncio.wait_for(client.get(detail_href), timeout=timeout)
+                    detail_data = r2.json()
+                except Exception:
+                    detail_data = None
+                if detail_data:
+                    vr_link = detail_data.get("_links", {}).get("pb:latest-verification-results", {})
+                    vr_href = vr_link.get("href") if isinstance(vr_link, dict) else None
+                    if vr_href:
+                        try:
+                            r3 = await asyncio.wait_for(client.get(vr_href), timeout=timeout)
+                            vr_data = r3.json()
+                        except Exception:
+                            vr_data = None
+                        if vr_data and isinstance(vr_data, dict) and "success" in vr_data:
+                            verification = {
+                                "success": vr_data["success"],
+                                "testResults": vr_data.get("testResults"),
+                                "verifiedAt": vr_data.get("verificationDate"),
+                            }
+
+            contracts.append({
+                "consumer": cname,
+                "provider": pname,
+                "version": ver_number,
+                "createdAt": p.get("createdAt"),
+                "verification": verification,
+            })
+
+        result["status"] = "up"
+        result["contracts"] = contracts
         return result
-
-    pacts = pacts_data.get("pacts", [])
-    contracts = []
-    for p in pacts:
-        emb = p.get("_embedded", {})
-        consumer = emb.get("consumer", {})
-        provider = emb.get("provider", {})
-        cname = consumer.get("name", "?")
-        pname = provider.get("name", "?")
-        version_emb = consumer.get("_embedded", {}).get("version", {})
-        ver_number = version_emb.get("number", "?")
-
-        # Query latest verification result from Broker.
-        # /pacts/latest only has `self` link; follow it to get detail-level links.
-        verification = None
-        self_link = p.get("_links", {}).get("self")
-        if isinstance(self_link, list) and self_link:
-            detail_href = self_link[0].get("href")
-        else:
-            detail_href = None
-        if detail_href:
-            detail_data = _http_get_json(detail_href, timeout=timeout)
-            if detail_data:
-                vr_link = detail_data.get("_links", {}).get("pb:latest-verification-results", {})
-                vr_href = vr_link.get("href") if isinstance(vr_link, dict) else None
-                if vr_href:
-                    vr_data = _http_get_json(vr_href, timeout=timeout)
-                    if vr_data and isinstance(vr_data, dict) and "success" in vr_data:
-                        verification = {
-                            "success": vr_data["success"],
-                            "testResults": vr_data.get("testResults"),
-                            "verifiedAt": vr_data.get("verificationDate"),
-                        }
-
-        contracts.append({
-            "consumer": cname,
-            "provider": pname,
-            "version": ver_number,
-            "createdAt": p.get("createdAt"),
-            "verification": verification,
-        })
-
-    result["status"] = "up"
-    result["contracts"] = contracts
-    return result
 
 
 async def _check_l2_jaeger(cfg: dict) -> dict:
@@ -106,12 +105,18 @@ async def _check_l2_jaeger(cfg: dict) -> dict:
         result["status"] = "down"
         return result
 
-    svc_data = _http_get_json(f"{JAEGER_QUERY_URL}/api/services", timeout=5)
-    if svc_data:
-        result["services"] = svc_data.get("data", [])
-        result["status"] = "up"
-    else:
-        result["status"] = "degraded"
+    async with httpx.AsyncClient(timeout=httpx.Timeout(5)) as client:
+        try:
+            r = await asyncio.wait_for(client.get(f"{JAEGER_QUERY_URL}/api/services"), timeout=5)
+            svc_data = r.json()
+        except Exception:
+            svc_data = None
+
+        if svc_data:
+            result["services"] = svc_data.get("data", [])
+            result["status"] = "up"
+        else:
+            result["status"] = "degraded"
 
     return result
 
@@ -188,13 +193,15 @@ async def _check_l3_git(cfg: dict) -> dict:
 
 
 async def check_defense_layers(cfg: dict) -> dict:
+    l1_cfg = cfg.get("l1", {})
+    l2_cfg = cfg.get("l2", {})
+    l3_cfg = cfg.get("l3", {})
     l1, l2, l3 = await asyncio.gather(
-        _check_l1_pact(cfg.get("l1", {})),
-        _check_l2_jaeger(cfg.get("l2", {})),
-        _check_l3_git(cfg.get("l3", {})),
+        _check_l1_pact(l1_cfg),
+        _check_l2_jaeger(l2_cfg),
+        _check_l3_git(l3_cfg),
     )
 
-    # Derive overall status
     statuses = [l1["status"], l2["status"], l3["status"]]
     if any(s == "down" for s in statuses):
         overall = "critical"

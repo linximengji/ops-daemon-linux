@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# LEGACY: use "sudo systemctl start ops-daemon" instead
 # Start ops-daemon in background
 set -e
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"

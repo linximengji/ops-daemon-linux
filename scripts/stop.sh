@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# LEGACY: use "sudo systemctl stop ops-daemon" instead
 # Graceful stop: write .stop marker and wait
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PIDFILE="$PROJECT_ROOT/data/daemon.pid"

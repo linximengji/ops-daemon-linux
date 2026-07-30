@@ -69,7 +69,6 @@ daemon:
   check_interval: 60
   data_dir: ./data
   name: ops-daemon
-  stop_marker: /home/ubuntu/projects/ops-daemon/.stop
 llm:
   diagnosis: true
   enabled: true
@@ -101,9 +100,6 @@ tasks:
   twin_refine:
     enabled: true
     schedule: 0 1 * * *
-  twin_gap_push:
-    enabled: true
-    schedule: 0 9,11,14,16,20 * * *
   tokenplan_fetch:
     enabled: true
     schedule: 17 */6 * * *

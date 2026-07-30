@@ -50,7 +50,7 @@ async def check_system(cfg: dict, store, baseline) -> dict:
             pass
 
     # cpu
-    cpu = psutil.cpu_percent(interval=1)
+    cpu = psutil.cpu_percent(interval=0.1)
     result["cpu"] = {"pct": cpu}
     cpu_state = "cpu_high" if cpu >= cpu_warn else "ok"
     if cpu_state != "ok" and _last_cpu_state != cpu_state:

@@ -6,7 +6,6 @@ and returns services[] array for inclusion in latest.json.
 Service registry YAML lives one directory up from checks/.
 """
 import subprocess
-import socket
 import asyncio
 import yaml
 from pathlib import Path
@@ -46,8 +45,10 @@ async def _check_orphan(name: str, svc: dict) -> dict:
     if not port:
         return {"status": "unknown"}
     try:
-        s = socket.create_connection(("127.0.0.1", port), timeout=3)
-        s.close()
+        _, writer = await asyncio.wait_for(
+            asyncio.open_connection("127.0.0.1", port), timeout=3)
+        writer.close()
+        await writer.wait_closed()
         result = {"status": "up"}
         pid = get_pid_by_port(port)
         if pid:
