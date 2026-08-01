@@ -289,6 +289,34 @@ async def main():
     if tcfg.get("twin_refine", {}).get("enabled", False):
         scheduler.add_task("twin_refine", tcfg["twin_refine"]["schedule"], run_twin_refine)
 
+    _reflect_count = 0
+
+    def run_twin_reflect():
+        nonlocal _reflect_count
+        _reflect_count += 1
+        print(f"[scheduler] run_twin_reflect called #{_reflect_count}")
+        try:
+            result = subprocess.run(
+                ["python3", "-c",
+                 "import sys; sys.path.insert(0, '/home/ubuntu/projects/digital-clone')\n"
+                 "from twin.db import get_db\n"
+                 "from twin.reflector import reflect\n"
+                 "import json\n"
+                 "print(json.dumps(reflect(get_db()), ensure_ascii=False))"],
+                capture_output=True, timeout=120,
+            )
+            ok = result.returncode == 0
+            print(f"[scheduler] run_twin_reflect #{_reflect_count} exit={result.returncode} ok={ok}")
+            if result.stdout:
+                print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()[:500]}")
+            if result.stderr:
+                print(f"[scheduler] stderr: {result.stderr.decode('utf-8', errors='replace')[:500]}")
+        except Exception as e:
+            print(f"[scheduler] run_twin_reflect exception: {e}")
+
+    if tcfg.get("twin_reflect", {}).get("enabled", False):
+        scheduler.add_task("twin_reflect", tcfg["twin_reflect"]["schedule"], run_twin_reflect)
+
     # TokenPlan credits 抓取
     _tokenplan_count = 0
     def run_tokenplan_fetch():

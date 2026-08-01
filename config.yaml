@@ -100,6 +100,9 @@ tasks:
   twin_refine:
     enabled: true
     schedule: 0 1 * * *
+  twin_reflect:
+    enabled: true
+    schedule: 17 */6 * * *
   tokenplan_fetch:
     enabled: true
     schedule: 17 */6 * * *
