@@ -55,8 +55,33 @@ def load_config() -> tuple[dict, Path]:
         return yaml.safe_load(f), root
 
 
+def acquire_singleton_lock(root: Path):
+    """flock-based single-instance lock. Second concurrent daemon exits politely.
+
+    flock is released automatically on process exit. Non-POSIX (no fcntl)
+    degrades to no-op. Holds the fd in a module global so it isn't GC'd.
+    """
+    global _LOCK_FD
+    try:
+        import fcntl
+    except ImportError:
+        return  # Windows dev box — no cross-process lock available
+    lock_path = root / "data" / ".daemon.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        _LOCK_FD = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+        fcntl.flock(_LOCK_FD, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print(f"[main] Another instance already running (lock held at {lock_path}). Exiting.")
+        sys.exit(1)
+
+
+_LOCK_FD = None
+
+
 async def main():
     cfg, root = load_config()
+    acquire_singleton_lock(root)
     dc = cfg["daemon"]
     cc = cfg["checks"]
     data_dir = root / dc["data_dir"]
