@@ -16,6 +16,13 @@ checks:
     host: 127.0.0.1
     port: 9878
     timeout_seconds: 5
+  twin_entity:
+    enabled: true
+    host: 127.0.0.1
+    port: 8790
+    timeout_seconds: 3
+    heartbeat_path: /home/ubuntu/projects/digital-clone/data/entity/heartbeat
+    heartbeat_max_s: 300
   github_ci:
     enabled: false
   log_scanner:

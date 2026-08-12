@@ -28,6 +28,7 @@ from agent_core import BaseDaemon, StateStore, BaselineEngine, Scheduler
 from ops_daemon.checks.proxy import check_proxy
 from ops_daemon.checks.cloudflared import check_cloudflared
 from ops_daemon.checks.claudetalk import check_claudetalk, check_mcp_server, check_feishu_bridge
+from ops_daemon.checks.twin_entity import check_twin_entity
 from ops_daemon.checks.system import check_system
 from ops_daemon.checks.service_registry import check_services
 from ops_daemon.checks.trip_scanner import check_trip_scanner
@@ -132,6 +133,9 @@ async def main():
 
     if cc.get("cloudflared", {}).get("enabled", False):
         daemon.register_check("cloudflared", lambda: check_cloudflared(cc["cloudflared"], store))
+
+    if cc.get("twin_entity", {}).get("enabled", False):
+        daemon.register_check("twin_entity", lambda: check_twin_entity(cc["twin_entity"], store))
 
     # ── Managed check — deprecated status aggregator, will be replaced when all services
     #     migrate to systemd. Currently a pass-through for abandoned-format consumers.
