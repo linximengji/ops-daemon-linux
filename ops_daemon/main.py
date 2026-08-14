@@ -346,6 +346,28 @@ async def main():
     if tcfg.get("twin_reflect", {}).get("enabled", False):
         scheduler.add_task("twin_reflect", tcfg["twin_reflect"]["schedule"], run_twin_reflect)
 
+    _dedup_count = 0
+    def run_twin_dedup():
+        nonlocal _dedup_count
+        _dedup_count += 1
+        print(f"[scheduler] run_twin_dedup called #{_dedup_count}")
+        try:
+            result = subprocess.run(
+                ["python3", "/home/ubuntu/projects/digital-clone/scripts/dedup_memories.py", "--execute"],
+                capture_output=True, timeout=300,
+            )
+            ok = result.returncode == 0
+            print(f"[scheduler] run_twin_dedup #{_dedup_count} exit={result.returncode} ok={ok}")
+            if result.stdout:
+                print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()[:600]}")
+            if result.stderr:
+                print(f"[scheduler] stderr: {result.stderr.decode('utf-8', errors='replace')[:600]}")
+        except Exception as e:
+            print(f"[scheduler] run_twin_dedup exception: {e}")
+
+    if tcfg.get("twin_dedup", {}).get("enabled", False):
+        scheduler.add_task("twin_dedup", tcfg["twin_dedup"]["schedule"], run_twin_dedup)
+
     # TokenPlan credits 抓取
     _tokenplan_count = 0
     def run_tokenplan_fetch():
