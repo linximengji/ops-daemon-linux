@@ -114,7 +114,7 @@ tasks:
     enabled: true
     schedule: 0 5 * * 0
   tokenplan_fetch:
-    enabled: true
+    enabled: false
     schedule: 17 */6 * * *
 alerts:
   cooldown_seconds: 1800
