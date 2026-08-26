@@ -26,18 +26,13 @@ python3 -m ops_daemon.mcp_server
 
 ## Stopping the daemon
 
-Write `.stop` marker file — daemon detects it within ~5s and exits gracefully:
+ops-daemon 由 systemd 管理，停止时发 SIGTERM 触发优雅退出：
 
 ```bash
-touch .stop
-# or use ./scripts/stop.sh
+sudo systemctl stop ops-daemon   # 或 ./scripts/stop.sh
 ```
 
-Force kill only if graceful stop times out:
-
-```bash
-kill -9 $(cat data/daemon.pid)
-```
+优雅退出需等完当前 check + sleep 周期（最长 ~60s）。已无 `.stop` marker / PID 文件机制。
 
 ## Architecture
 
@@ -51,8 +46,7 @@ feishu-bridge（9878 端口）是独立于 daemon 的进程，消费飞书消息
 
 | 飞书消息 | 功能 |
 |---------|------|
-| `/restart`、`重启` | 写 `.restart-claudetalk` marker，由外部 supervisor 消费 |
-| `/daemon restart`、`重启daemon` | 写 `.restart-daemon` marker，由外部 supervisor 消费 |
+| `/restart`、`重启`、`/daemon restart`、`重启daemon` | ⚠️ 当前为静默吞掉（return true，无动作）——原写 `.restart-*` marker 的实现已移除且无 supervisor 消费。重启服务请用 `sudo systemctl restart <svc>` |
 | `打开/开启 jaeger/追踪/trace` | docker compose start jaeger |
 | `打开/开启 pact/合约` | docker compose start pact-broker |
 | `打开/开启 面板/dashboard` | 启动 ops-dashboard (8765) |
@@ -67,9 +61,9 @@ feishu-bridge（9878 端口）是独立于 daemon 的进程，消费飞书消息
 
 ### Core loop (`main.py`)
 
-Async loop driven by `BaseDaemon.run()` — every 60s (`check_interval` in `config.yaml`) runs all registered checks, writes results to `data/working/latest.json`. Exit via `.stop` marker file.
+Async loop driven by `BaseDaemon.run()` — every 60s (`check_interval` in `config.yaml`) runs all registered checks, writes results to `data/working/latest.json`. Exit via SIGTERM (systemd)。
 
-**响应式 sleep**: 60s 间隔被拆为 5s 片段，每段检测 `.stop` 标记。响应延迟从 60s 降至 ~5s（`agent_core/base.py:run()`）。
+**停止延迟**：`run()` 是 `while running: checks + sleep(60)`，无 marker 检测；systemctl stop 后需等完当前周期才退出（最长 ~60s，systemd TimeoutStop 兜底）。
 
 ### What was removed
 
@@ -111,7 +105,7 @@ trip 是独立于监控主循环的业务子系统。**激活不在 daemon 内**
 
 Shared framework at `/home/ubuntu/projects/agent-core`, installed as editable. Key classes:
 
-- **BaseDaemon** — async main loop, check registry, stop marker graceful exit
+- **BaseDaemon** — async main loop, check registry, SIGTERM graceful exit（无 marker 机制）
 - **StateStore** — three-zone file storage (working + episodic + baseline + alerts)
 - **BaselineEngine** — sliding window (median/stdev) anomaly detection
 - **AlertManager** — severity-based alerting with per-key cooldown

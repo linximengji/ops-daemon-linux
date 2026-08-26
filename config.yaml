@@ -113,6 +113,9 @@ tasks:
   twin_dedup:
     enabled: true
     schedule: 0 5 * * 0
+  code_scan:
+    enabled: true
+    schedule: 37 8 * * *
   tokenplan_fetch:
     enabled: false
     schedule: 17 */6 * * *

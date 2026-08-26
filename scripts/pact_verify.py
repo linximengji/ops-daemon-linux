@@ -230,7 +230,13 @@ def _results_to_json(all_results):
             continue
         for iv in r["interactions"]:
             if not iv.get("pass") and not iv.get("skipped"):
-                failed.append(iv["description"])
+                failed.append({
+                    "description": iv["description"],
+                    "consumer": r.get("consumer"),
+                    "provider": r.get("provider"),
+                    "mismatches": iv.get("mismatches", []),
+                    "error": iv.get("error"),
+                })
 
     return {
         "status": "passed" if not failed else "failed",

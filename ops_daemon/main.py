@@ -368,6 +368,31 @@ async def main():
     if tcfg.get("twin_dedup", {}).get("enabled", False):
         scheduler.add_task("twin_dedup", tcfg["twin_dedup"]["schedule"], run_twin_dedup)
 
+    # Code Graph 增量扫描（按 git rev 做增量，无变更时秒级结束）
+    _scan_count = 0
+    def run_code_scan():
+        nonlocal _scan_count
+        _scan_count += 1
+        print(f"[scheduler] run_code_scan #{_scan_count}")
+        try:
+            result = subprocess.run(
+                ["python3", "-c",
+                 "import sys; sys.path.insert(0, '/home/ubuntu/projects/memory-mcp')\n"
+                 "from scan import scan\n"
+                 "print(scan(None))"],
+                capture_output=True, timeout=300,
+            )
+            print(f"[scheduler] run_code_scan #{_scan_count} exit={result.returncode}")
+            if result.stdout:
+                print(f"[scheduler] stdout: {result.stdout.decode('utf-8', errors='replace').strip()[:600]}")
+            if result.stderr:
+                print(f"[scheduler] stderr: {result.stderr.decode('utf-8', errors='replace')[:500]}")
+        except Exception as e:
+            print(f"[scheduler] run_code_scan exception: {e}")
+
+    if tcfg.get("code_scan", {}).get("enabled", False):
+        scheduler.add_task("code_scan", tcfg["code_scan"]["schedule"], run_code_scan)
+
     # TokenPlan credits 抓取
     _tokenplan_count = 0
     def run_tokenplan_fetch():
