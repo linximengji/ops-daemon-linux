@@ -102,7 +102,7 @@ tasks:
         interval_days: 4
   semi_report:
     enabled: true
-    schedule: 2 8 * * *
+    schedule: 2 8 * * 1-5    # 工作日(周一至周五) 8:02
     miniflux: true           # use Miniflux as RSS source instead of direct fetch
   twin_refine:
     enabled: true
