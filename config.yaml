@@ -95,7 +95,7 @@ tasks:
     schedule: 30 8 * * *
     sections:
       memory_deep:
-        dow: '5'
+        interval_days: 3
       tool_audit:
         dow: '1'
       twin_health_deep:

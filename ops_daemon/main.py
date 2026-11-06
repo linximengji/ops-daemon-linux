@@ -249,7 +249,7 @@ async def main():
             _dr_env["PYTHONPATH"] = _dr_p + ":" + _dr_env.get("PYTHONPATH", "")
         try:
             _dr_cwd = str(root.parent / "daily_report")
-            result = subprocess.run(cmd, cwd=_dr_cwd, env=_dr_env, capture_output=True, timeout=300)
+            result = subprocess.run(cmd, cwd=_dr_cwd, env=_dr_env, capture_output=True, timeout=600)
             ok = result.returncode == 0
             _write_report_status("daily_report", "done" if ok else "failed")
             print(f"[scheduler] run_daily_report #{_report_count} exit code={result.returncode}")
